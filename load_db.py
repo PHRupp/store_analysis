@@ -37,6 +37,7 @@ def load_csv_to_sqlite(customers_path, orders_path, items_path, db_name="busines
             # Load Items
             print(f"Processing items: {items_path}...")
             items_df = pd.read_csv(items_path)
+
             items_df.to_sql("items", conn, if_exists="replace", index=False)
 
             print("Data successfully loaded into 'customers', 'orders', and 'items' tables.")
