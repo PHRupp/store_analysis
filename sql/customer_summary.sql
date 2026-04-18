@@ -64,6 +64,7 @@ SELECT
     om.order_count,
     om.first_order_date,
     om.last_order_date,
+    (julianday('now') - julianday(om.last_order_date)) AS "days since last order",
     vm.mean_days_between_orders,
     mm.median_days_between_orders
 FROM
