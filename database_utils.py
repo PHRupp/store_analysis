@@ -134,6 +134,41 @@ def fetch_overdue_customers(store_name=None, account_filter='All', limit=20):
         logger.error(f"Error fetching overdue customers: {e}")
         return pd.DataFrame(columns=['Name', 'days_past_expected', 'median_spend', 'order_count', 'median_days_between_orders', 'recency'])
 
+def fetch_new_customers_trend(store_name=None, account_filter='All', start_date=None, end_date=None):
+    """
+    Retrieves the count of new customers per month based on their first order date.
+    """
+    if not os.path.exists(DB_PATH):
+        return pd.DataFrame(columns=['month_year', 'customer_category', 'new_customer_count'])
+
+    query = 'SELECT strftime("%Y-%m", first_order_date) AS month_year, "Customer Category" AS customer_category, COUNT("Customer ID") AS new_customer_count FROM customer_order_summary'
+    conditions = []
+    params = []
+    if store_name and store_name != 'All':
+        conditions.append('"Store Name" = ?')
+        params.append(store_name)
+    if account_filter != 'All':
+        conditions.append('account_type = ?')
+        params.append(account_filter)
+    if start_date:
+        conditions.append('first_order_date >= ?')
+        params.append(start_date)
+    if end_date:
+        conditions.append('first_order_date <= ?')
+        params.append(end_date)
+    
+    if conditions:
+        query += ' WHERE ' + ' AND '.join(conditions)
+    
+    query += ' GROUP BY month_year, customer_category ORDER BY month_year ASC'
+
+    try:
+        with sqlite3.connect(DB_PATH) as conn:
+            return pd.read_sql_query(query, conn, params=params)
+    except Exception as e:
+        logger.error(f"Error fetching new customer trends: {e}")
+        return pd.DataFrame(columns=['month_year', 'customer_category', 'new_customer_count'])
+
 def fetch_monthly_revenue(store_name=None, start_date=None, end_date=None, account_filter='All'):
     """
     Connects to the SQLite database and retrieves total revenue aggregated by month.
@@ -323,3 +358,101 @@ def fetch_order_totals(store_name=None, start_date=None, end_date=None, account_
     except Exception as e:
         logger.error(f"Error fetching order totals: {e}")
         return pd.DataFrame(columns=['Total', 'customer_category'])
+
+def fetch_daytime_data(store_name=None, start_date=None, end_date=None, account_filter='All', day_of_week='All'):
+    """
+    Retrieves the time component of 'Placed' and customer category for daytime analysis.
+    """
+    if not os.path.exists(DB_PATH):
+        return pd.DataFrame(columns=['placed_hour', 'customer_category'])
+    
+    conditions = [
+        'o."Placed" IS NOT NULL',
+        'CAST(strftime("%H", o."Placed") AS INTEGER) BETWEEN 7 AND 19'
+    ]
+    params = []
+    
+    if store_name and store_name != 'All':
+        conditions.append('o."Store Name" = ?')
+        params.append(store_name)
+    if start_date:
+        conditions.append('o."Placed" >= ?')
+        params.append(start_date)
+    if end_date:
+        conditions.append('o."Placed" <= ?')
+        params.append(end_date)
+    if account_filter != 'All':
+        conditions.append("(CASE WHEN c.\"Business ID\" IS NULL OR c.\"Business ID\" = '' THEN 'Retail' ELSE 'Commercial' END) = ?")
+        params.append(account_filter)
+
+    if day_of_week and day_of_week != 'All':
+        conditions.append("strftime('%w', o.\"Placed\") = ?")
+        params.append(str(day_of_week))
+
+    where_clause = " WHERE " + " AND ".join(conditions)
+    
+    query = f'''
+    SELECT 
+        strftime('%H', o."Placed") as placed_hour,
+        cs."Customer Category" as customer_category
+    FROM orders o
+    JOIN customers c ON o."Customer ID" = c."Customer ID" AND o."Store ID" = c."Store ID"
+    JOIN customer_order_summary cs ON o."Customer ID" = cs."Customer ID" AND o."Store ID" = cs."Store ID"
+    {where_clause}
+    '''
+    
+    try:
+        with sqlite3.connect(DB_PATH) as conn:
+            return pd.read_sql_query(query, conn, params=params)
+    except Exception as e:
+        logger.error(f"Error fetching daytime data: {e}")
+        return pd.DataFrame(columns=['placed_hour', 'customer_category'])
+
+def fetch_collection_data(store_name=None, start_date=None, end_date=None, account_filter='All', day_of_week='All'):
+    """
+    Retrieves the time component of 'Collected' and customer category for daytime analysis.
+    """
+    if not os.path.exists(DB_PATH):
+        return pd.DataFrame(columns=['collected_hour', 'customer_category'])
+    
+    conditions = [
+        'o."Collected" IS NOT NULL',
+        'CAST(strftime("%H", o."Collected") AS INTEGER) BETWEEN 7 AND 19'
+    ]
+    params = []
+    
+    if store_name and store_name != 'All':
+        conditions.append('o."Store Name" = ?')
+        params.append(store_name)
+    if start_date:
+        conditions.append('o."Placed" >= ?')
+        params.append(start_date)
+    if end_date:
+        conditions.append('o."Placed" <= ?')
+        params.append(end_date)
+    if account_filter != 'All':
+        conditions.append("(CASE WHEN c.\"Business ID\" IS NULL OR c.\"Business ID\" = '' THEN 'Retail' ELSE 'Commercial' END) = ?")
+        params.append(account_filter)
+
+    if day_of_week and day_of_week != 'All':
+        conditions.append("strftime('%w', o.\"Collected\") = ?")
+        params.append(str(day_of_week))
+
+    where_clause = " WHERE " + " AND ".join(conditions)
+    
+    query = f'''
+    SELECT 
+        strftime('%H', o."Collected") as collected_hour,
+        cs."Customer Category" as customer_category
+    FROM orders o
+    JOIN customers c ON o."Customer ID" = c."Customer ID" AND o."Store ID" = c."Store ID"
+    JOIN customer_order_summary cs ON o."Customer ID" = cs."Customer ID" AND o."Store ID" = cs."Store ID"
+    {where_clause}
+    '''
+    
+    try:
+        with sqlite3.connect(DB_PATH) as conn:
+            return pd.read_sql_query(query, conn, params=params)
+    except Exception as e:
+        logger.error(f"Error fetching collection data: {e}")
+        return pd.DataFrame(columns=['collected_hour', 'customer_category'])

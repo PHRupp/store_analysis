@@ -9,7 +9,19 @@ import os
 import sys
 
 # Import data fetching utilities
-from database_utils import fetch_store_names, fetch_customer_stats, fetch_monthly_revenue, fetch_top_customers, fetch_order_trends, fetch_category_order_trends, fetch_order_totals, fetch_overdue_customers
+from database_utils import (
+    fetch_store_names, 
+    fetch_customer_stats, 
+    fetch_monthly_revenue, 
+    fetch_top_customers, 
+    fetch_order_trends, 
+    fetch_category_order_trends, 
+    fetch_order_totals, 
+    fetch_overdue_customers, 
+    fetch_daytime_data, 
+    fetch_collection_data,
+    fetch_new_customers_trend,
+)
 
 # Configure logging to screen and file
 log_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "log")
@@ -25,7 +37,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # Initialize the Dash app
-app = dash.Dash(__name__)
+app = dash.Dash(__name__, suppress_callback_exceptions=True)
 
 # Unified category configuration to ensure matching colors across all charts
 CATEGORY_ORDER = [
@@ -86,7 +98,27 @@ app.layout = html.Div(style={'backgroundColor': '#111111', 'minHeight': '100vh'}
                     value='All',
                     style={'width': '200px', 'display': 'inline-block', 'verticalAlign': 'middle'}
                 )
-            ], style={'marginLeft': '40px'})
+            ], style={'marginLeft': '40px'}),
+
+            # Day of Week Filter (Only shown for Daytime Tab)
+            html.Div(id='day-filter-container', style={'display': 'none', 'marginLeft': '40px'}, children=[
+                html.Label("Filter by Day:", style={'color': '#7FDBFF', 'marginRight': '10px'}),
+                dcc.Dropdown(
+                    id='daytime-day-filter',
+                    options=[
+                        {'label': 'All Days', 'value': 'All'},
+                        {'label': 'Sunday', 'value': '0'},
+                        {'label': 'Monday', 'value': '1'},
+                        {'label': 'Tuesday', 'value': '2'},
+                        {'label': 'Wednesday', 'value': '3'},
+                        {'label': 'Thursday', 'value': '4'},
+                        {'label': 'Friday', 'value': '5'},
+                        {'label': 'Saturday', 'value': '6'},
+                    ],
+                    value='All',
+                    style={'width': '180px', 'display': 'inline-block', 'verticalAlign': 'middle'}
+                )
+            ])
         ], style={
             'display': 'flex', 
             'justifyContent': 'center', 
@@ -101,15 +133,24 @@ app.layout = html.Div(style={'backgroundColor': '#111111', 'minHeight': '100vh'}
             dcc.Tab(label='Customer Analysis', value='tab-customer',
                     style={'backgroundColor': '#222222', 'color': '#7FDBFF', 'border': '1px solid #333333'},
                     selected_style={'backgroundColor': '#111111', 'color': 'white', 'borderTop': '2px solid #7FDBFF'}),
+            dcc.Tab(label='DayTime Analysis', value='tab-daytime',
+                    style={'backgroundColor': '#222222', 'color': '#7FDBFF', 'border': '1px solid #333333'},
+                    selected_style={'backgroundColor': '#111111', 'color': 'white', 'borderTop': '2px solid #7FDBFF'}),
         ], style={'marginBottom': '0px'}),
     ]),
 
-    # Scrollable Content Section
-    html.Div(id='tabs-content', style={'padding': '280px 20px 20px 20px'})
+    # Scrollable Content Sections
+    html.Div(style={'padding': '280px 20px 20px 20px'}, children=[
+        html.Div(id='tabs-content'),
+        # Permanently in layout to avoid callback errors, visibility toggled by tab
+        html.Div(id='daytime-graphs-container', style={'display': 'none'})
+    ])
 ])
 
 @app.callback(
-    Output('tabs-content', 'children'),
+    [Output('tabs-content', 'children'),
+     Output('day-filter-container', 'style'),
+     Output('daytime-graphs-container', 'style')],
     [Input('tabs-navigation', 'value'),
      Input('store-id-dropdown', 'value'), # Now passing Store Name
      Input('date-range-picker', 'start_date'),
@@ -117,10 +158,29 @@ app.layout = html.Div(style={'backgroundColor': '#111111', 'minHeight': '100vh'}
      Input('account-type-dropdown', 'value')]
 )
 def render_tab_content(active_tab, selected_store_name, start_date, end_date, account_filter):
+    # Default styles
+    hide = {'display': 'none'}
+    show_flex = {'display': 'flex', 'marginLeft': '40px'}
+    show_block = {'display': 'block'}
+
     if active_tab == 'tab-store':
-        return update_store_analysis(selected_store_name, start_date, end_date, account_filter)
+        return update_store_analysis(selected_store_name, start_date, end_date, account_filter), hide, hide
+    elif active_tab == 'tab-customer':
+        return update_customer_analysis(selected_store_name, account_filter, start_date, end_date), hide, hide
     else:
-        return update_customer_analysis(selected_store_name, account_filter)
+        # For Daytime tab, tabs-content is empty; we show the specific daytime containers
+        return None, show_flex, show_block
+
+@app.callback(
+    Output('daytime-graphs-container', 'children'),
+    [Input('store-id-dropdown', 'value'),
+     Input('date-range-picker', 'start_date'),
+     Input('date-range-picker', 'end_date'),
+     Input('account-type-dropdown', 'value'),
+     Input('daytime-day-filter', 'value')]
+)
+def update_daytime_graphs(selected_store_name, start_date, end_date, account_filter, day_of_week):
+    return render_daytime_analysis_charts(selected_store_name, start_date, end_date, account_filter, day_of_week)
 
 def update_store_analysis(selected_store_name, start_date, end_date, account_filter):
     df_revenue = fetch_monthly_revenue(selected_store_name, start_date, end_date, account_filter)
@@ -255,12 +315,13 @@ def update_store_analysis(selected_store_name, start_date, end_date, account_fil
         ])
     ])
 
-def update_customer_analysis(selected_store, account_filter):
+def update_customer_analysis(selected_store, account_filter, start_date, end_date):
     df_cust = fetch_customer_stats(selected_store, account_filter)
     df_top = fetch_top_customers(selected_store, account_filter)
     df_overdue = fetch_overdue_customers(selected_store, account_filter)
+    df_new = fetch_new_customers_trend(selected_store, account_filter, start_date, end_date)
     
-    if df_cust.empty and df_top.empty and df_overdue.empty:
+    if df_cust.empty and df_top.empty and df_overdue.empty and df_new.empty:
         return html.Div("No customer data available.", style={'color': '#7FDBFF', 'textAlign': 'center'})
 
     fig_count = px.pie(
@@ -350,6 +411,24 @@ def update_customer_analysis(selected_store, account_filter):
     )
     fig_overdue.update_layout(plot_bgcolor='#111111', paper_bgcolor='#111111', font_color='#7FDBFF')
 
+    # New Customer Acquisition Trend
+    if not df_new.empty:
+        fig_new = px.bar(
+            df_new, x='month_year', y='new_customer_count', color='customer_category',
+            title='New Customer Acquisition Trend',
+            labels={'month_year': 'Month', 'new_customer_count': 'New Customers', 'customer_category': 'Category'},
+            category_orders={'customer_category': CATEGORY_ORDER},
+            color_discrete_map=CATEGORY_COLORS,
+            template='plotly_dark'
+        )
+        fig_new.update_layout(
+            plot_bgcolor='#111111', paper_bgcolor='#111111', font_color='#7FDBFF',
+            legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
+        )
+    else:
+        fig_new = px.scatter(title="No acquisition data available.", template='plotly_dark')
+        fig_new.update_layout(plot_bgcolor='#111111', paper_bgcolor='#111111', font_color='#7FDBFF')
+
     for fig in [fig_count, fig_spend, fig_top]:
         fig.update_layout(
             plot_bgcolor='#111111',
@@ -368,7 +447,70 @@ def update_customer_analysis(selected_store, account_filter):
     html.Div([
         html.Div([dcc.Graph(id='top-customer-bar-line', figure=fig_top)], style={'width': '50%'}),
         html.Div([dcc.Graph(id='overdue-customer-bar', figure=fig_overdue)], style={'width': '50%'})
-    ], style={'display': 'flex'}),)
+    ], style={'display': 'flex'}),
+    html.Div([dcc.Graph(id='new-customer-trend', figure=fig_new)]),)
+
+def render_daytime_analysis_charts(selected_store_name, start_date, end_date, account_filter, day_of_week):
+    """
+    Generates the actual histograms for the DayTime Analysis tab.
+    """
+    # Default value for the pattern-matched input if it doesn't exist yet
+    day_val = day_of_week if day_of_week is not None else 'All'
+
+    df_placed = fetch_daytime_data(selected_store_name, start_date, end_date, account_filter, day_val)
+    df_collected = fetch_collection_data(selected_store_name, start_date, end_date, account_filter, day_val)
+
+    if df_placed.empty and df_collected.empty:
+        return html.Div("No daytime or collection data available.", style={'color': '#7FDBFF', 'textAlign': 'center', 'marginTop': '40px'})
+
+    # Order Placed Distribution
+    fig_placed = px.histogram(
+        df_placed, 
+        x='placed_hour', 
+        color='customer_category',
+        category_orders={
+            'customer_category': CATEGORY_ORDER,
+            'placed_hour': [f"{i:02d}" for i in range(7, 19)]
+        },
+        color_discrete_map=CATEGORY_COLORS,
+        title='Order Placed Distribution (7AM - 7PM)',
+        labels={'placed_hour': 'Hour of Day (24h)', 'customer_category': 'Category'},
+        template='plotly_dark'
+    )
+    
+    # Order Collected Distribution
+    fig_collected = px.histogram(
+        df_collected, 
+        x='collected_hour', 
+        color='customer_category',
+        category_orders={
+            'customer_category': CATEGORY_ORDER,
+            'collected_hour': [f"{i:02d}" for i in range(7, 19)]
+        },
+        color_discrete_map=CATEGORY_COLORS,
+        title='Order Collected Distribution (7AM - 7PM)',
+        labels={'collected_hour': 'Hour of Day (24h)', 'customer_category': 'Category'},
+        template='plotly_dark'
+    )
+    
+    for fig in [fig_placed, fig_collected]:
+        fig.update_layout(
+            plot_bgcolor='#111111',
+            paper_bgcolor='#111111',
+            font_color='#7FDBFF',
+            bargap=0.1,
+            xaxis=dict(type='category'),
+            legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
+        )
+    
+    return html.Div([
+        html.Div([
+            dcc.Graph(id='placed-daytime-histogram', figure=fig_placed)
+        ], style={'width': '50%', 'display': 'inline-block'}),
+        html.Div([
+            dcc.Graph(id='collected-daytime-histogram', figure=fig_collected)
+        ], style={'width': '50%', 'display': 'inline-block'})
+    ], style={'display': 'flex'})
 
 if __name__ == '__main__':
     app.run(debug=True)
