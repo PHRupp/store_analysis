@@ -68,14 +68,13 @@ SELECT
         WHEN c."Business ID" IS NULL OR c."Business ID" = '' THEN 'Retail' 
         ELSE 'Commercial' 
     END as account_type,
-    CASE 
-        WHEN om.order_count <= 1 THEN '1) One Time'
-        WHEN om.order_count = 2 THEN '2) Second'
-        WHEN om.order_count = 3 THEN '3) Third'
-        WHEN om.order_count <= 10 THEN '4) Comfortable'
-        WHEN om.order_count <= 20 THEN '5) Regular'
-        WHEN om.order_count <= 50 THEN '6) Super Regular'
-        ELSE '7) Big Dawgs'
+    CASE
+        WHEN om.order_count <= 1 THEN '1 One Time'
+        WHEN om.order_count < 4 THEN '2-3 Testing'
+        WHEN om.order_count < 10 THEN '4-9 Comfortable'
+        WHEN om.order_count < 20 THEN '10-19 Regular'
+        WHEN om.order_count < 50 THEN '20-49 Super Regular'
+        ELSE '50+ Big Dawgs'
     END AS "Customer Category",
     om.first_order_date,
     om.last_order_date,

@@ -195,11 +195,12 @@ def update_store_analysis(selected_store_name, start_date, end_date, account_fil
     ]
 
     if not df_cat_trends.empty:
-        fig_cat = px.bar(
+        fig_cat = px.line(
             df_cat_trends, x='month_year', y='order_count', color='customer_category',
-            title='Order Volume by Customer Category',
+            title='Order Volume Trends by Customer Category',
             labels={'month_year': 'Month', 'order_count': 'Orders', 'customer_category': 'Category'},
             category_orders={'customer_category': category_order},
+            markers=True,
             template='plotly_dark'
         )
         fig_cat.update_layout(
@@ -212,24 +213,24 @@ def update_store_analysis(selected_store_name, start_date, end_date, account_fil
 
     # Order Totals Histogram
     if not df_totals.empty:
-        # Clip values at 200 to create a single overflow bin for all orders > $200
+        # Clip values at 150 to create a single overflow bin for all orders > $150
         df_hist_data = df_totals.copy()
-        df_hist_data['Total'] = df_hist_data['Total'].clip(upper=200)
+        df_hist_data['Total'] = df_hist_data['Total'].clip(upper=150)
 
         fig_hist = px.histogram(
             df_hist_data, x='Total',
             title='Distribution of Order Totals',
             labels={'Total': 'Order Total ($)'},
             template='plotly_dark',
-            nbins=40 # This creates consistent $5 bins for the 0-200 range
+            nbins=30 # This creates consistent $5 bins for the 0-150 range
         )
         fig_hist.update_layout(
             plot_bgcolor='#111111', paper_bgcolor='#111111', font_color='#7FDBFF',
             bargap=0.1,
             xaxis=dict(
                 tickmode='array',
-                tickvals=[0, 50, 100, 150, 200],
-                ticktext=['$0', '$50', '$100', '$150', '$200+']
+                tickvals=[0, 50, 100, 150],
+                ticktext=['$0', '$50', '$100', '$150+']
             )
         )
         fig_hist.update_traces(marker_color='#00CC96')
@@ -258,8 +259,7 @@ def update_customer_analysis(selected_store, account_filter):
 
     # Define a consistent order for categories to ensure matching colors across plots
     category_order = [
-        '1) One Time', '2) Second', '3) Third', '4) Comfortable', 
-        '5) Regular', '6) Super Regular', '7) Big Dawgs'
+        '1 One Time', '2-3 Testing', '4-9 Comfortable', '10-19 Regular', '20-49 Super Regular', '50+ Big Dawgs'
     ]
 
     fig_count = px.pie(
@@ -321,15 +321,28 @@ def update_customer_analysis(selected_store, account_filter):
     fig_top.update_layout(hovermode='x unified')
 
     # Overdue Customers Bar Chart
+    overdue_hover_cols = ['median_spend', 'order_count', 'median_days_between_orders', 'recency']
     fig_overdue = px.bar(
         df_overdue, 
         x='Name', 
         y='days_past_expected',
         title='Customers Past Expected Visit (Days)',
         labels={'days_past_expected': 'Days Overdue', 'Name': 'Customer'},
+        custom_data=overdue_hover_cols,
         template='plotly_dark'
     )
-    fig_overdue.update_traces(marker_color='#FF4B4B') # Red to signal risk
+    fig_overdue.update_traces(
+        marker_color='#FF4B4B', # Red to signal risk
+        hovertemplate=(
+            "<b>%{x}</b><br>"
+            "Days Overdue: %{y:.0f}<br>"
+            "Median Order Total: $%{customdata[0]:,.2f}<br>"
+            "Order Count: %{customdata[1]}<br>"
+            "Median Interval: %{customdata[2]:.1f} days<br>"
+            "Last Order: %{customdata[3]:.0f} days ago"
+            "<extra></extra>"
+        )
+    )
     fig_overdue.update_layout(plot_bgcolor='#111111', paper_bgcolor='#111111', font_color='#7FDBFF')
 
     for fig in [fig_count, fig_spend, fig_top]:

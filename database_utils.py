@@ -98,12 +98,21 @@ def fetch_overdue_customers(store_name=None, account_filter='All', limit=20):
     Retrieves customers who are past their expected visit date based on median order intervals.
     """
     if not os.path.exists(DB_PATH):
-        return pd.DataFrame(columns=['Name', 'days_past_expected'])
+        return pd.DataFrame(columns=['Name', 'days_past_expected', 'median_spend', 'order_count', 'median_days_between_orders', 'recency'])
 
-    query = 'SELECT "Name", ("days since last order" - median_days_between_orders) AS days_past_expected FROM customer_order_summary'
+    query = '''
+    SELECT 
+        "Name", 
+        ("days since last order" - median_days_between_orders) AS days_past_expected,
+        median_spend,
+        order_count,
+        median_days_between_orders,
+        "days since last order" AS recency
+    FROM customer_order_summary
+    '''
     conditions = [
         'median_days_between_orders IS NOT NULL',
-        '("days since last order" - median_days_between_orders) < 180',
+        '("days since last order" - median_days_between_orders) < 360',
         'order_count > 10'
     ]
     params = []
@@ -123,7 +132,7 @@ def fetch_overdue_customers(store_name=None, account_filter='All', limit=20):
             return pd.read_sql_query(query, conn, params=params)
     except Exception as e:
         logger.error(f"Error fetching overdue customers: {e}")
-        return pd.DataFrame(columns=['Name', 'days_past_expected'])
+        return pd.DataFrame(columns=['Name', 'days_past_expected', 'median_spend', 'order_count', 'median_days_between_orders', 'recency'])
 
 def fetch_monthly_revenue(store_name=None, start_date=None, end_date=None, account_filter='All'):
     """
