@@ -21,6 +21,7 @@ from database_utils import (
     fetch_daytime_data, 
     fetch_collection_data,
     fetch_new_customers_trend,
+    fetch_last_order_trend,
 )
 
 # Configure logging to screen and file
@@ -320,8 +321,9 @@ def update_customer_analysis(selected_store, account_filter, start_date, end_dat
     df_top = fetch_top_customers(selected_store, account_filter)
     df_overdue = fetch_overdue_customers(selected_store, account_filter)
     df_new = fetch_new_customers_trend(selected_store, account_filter, start_date, end_date)
+    df_returning = fetch_last_order_trend(selected_store, account_filter, start_date, end_date)
     
-    if df_cust.empty and df_top.empty and df_overdue.empty and df_new.empty:
+    if df_cust.empty and df_top.empty and df_overdue.empty and df_new.empty and df_returning.empty:
         return html.Div("No customer data available.", style={'color': '#7FDBFF', 'textAlign': 'center'})
 
     fig_count = px.pie(
@@ -387,21 +389,24 @@ def update_customer_analysis(selected_store, account_filter, start_date, end_dat
     fig_top.update_layout(hovermode='x unified')
 
     # Overdue Customers Bar Chart
-    overdue_hover_cols = ['median_spend', 'order_count', 'median_days_between_orders', 'recency']
+    overdue_hover_cols = ['median_spend', 'order_count', 'median_days_between_orders', 'recency', 'total_spend']
     fig_overdue = px.bar(
         df_overdue, 
         x='Name', 
         y='days_past_expected',
+        color='customer_category',
+        category_orders={'customer_category': CATEGORY_ORDER},
+        color_discrete_map=CATEGORY_COLORS,
         title='Customers Past Expected Visit (Days)',
-        labels={'days_past_expected': 'Days Overdue', 'Name': 'Customer'},
+        labels={'days_past_expected': 'Days Overdue', 'Name': 'Customer', 'customer_category': 'Category'},
         custom_data=overdue_hover_cols,
         template='plotly_dark'
     )
     fig_overdue.update_traces(
-        marker_color='#FF4B4B', # Red to signal risk
         hovertemplate=(
             "<b>%{x}</b><br>"
             "Days Overdue: %{y:.0f}<br>"
+            "Total Lifetime Spend: $%{customdata[4]:,.2f}<br>"
             "Median Order Total: $%{customdata[0]:,.2f}<br>"
             "Order Count: %{customdata[1]}<br>"
             "Median Interval: %{customdata[2]:.1f} days<br>"
@@ -429,6 +434,24 @@ def update_customer_analysis(selected_store, account_filter, start_date, end_dat
         fig_new = px.scatter(title="No acquisition data available.", template='plotly_dark')
         fig_new.update_layout(plot_bgcolor='#111111', paper_bgcolor='#111111', font_color='#7FDBFF')
 
+    # Last Order Activity Trend
+    if not df_returning.empty:
+        fig_returning = px.bar(
+            df_returning, x='month_year', y='last_order_count', color='customer_category',
+            title='Last Order Activity Trend',
+            labels={'month_year': 'Month', 'last_order_count': 'Customers', 'customer_category': 'Category'},
+            category_orders={'customer_category': CATEGORY_ORDER},
+            color_discrete_map=CATEGORY_COLORS,
+            template='plotly_dark'
+        )
+        fig_returning.update_layout(
+            plot_bgcolor='#111111', paper_bgcolor='#111111', font_color='#7FDBFF',
+            legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
+        )
+    else:
+        fig_returning = px.scatter(title="No activity data available.", template='plotly_dark')
+        fig_returning.update_layout(plot_bgcolor='#111111', paper_bgcolor='#111111', font_color='#7FDBFF')
+
     for fig in [fig_count, fig_spend, fig_top]:
         fig.update_layout(
             plot_bgcolor='#111111',
@@ -448,7 +471,10 @@ def update_customer_analysis(selected_store, account_filter, start_date, end_dat
         html.Div([dcc.Graph(id='top-customer-bar-line', figure=fig_top)], style={'width': '50%'}),
         html.Div([dcc.Graph(id='overdue-customer-bar', figure=fig_overdue)], style={'width': '50%'})
     ], style={'display': 'flex'}),
-    html.Div([dcc.Graph(id='new-customer-trend', figure=fig_new)]),)
+    html.Div([
+        html.Div([dcc.Graph(id='new-customer-trend', figure=fig_new)], style={'width': '50%'}),
+        html.Div([dcc.Graph(id='last-order-trend', figure=fig_returning)], style={'width': '50%'})
+    ], style={'display': 'flex'}),)
 
 def render_daytime_analysis_charts(selected_store_name, start_date, end_date, account_filter, day_of_week):
     """

@@ -98,7 +98,7 @@ def fetch_overdue_customers(store_name=None, account_filter='All', limit=20):
     Retrieves customers who are past their expected visit date based on median order intervals.
     """
     if not os.path.exists(DB_PATH):
-        return pd.DataFrame(columns=['Name', 'days_past_expected', 'median_spend', 'order_count', 'median_days_between_orders', 'recency'])
+        return pd.DataFrame(columns=['Name', 'days_past_expected', 'median_spend', 'order_count', 'median_days_between_orders', 'recency', 'customer_category', 'total_spend'])
 
     query = '''
     SELECT 
@@ -107,7 +107,9 @@ def fetch_overdue_customers(store_name=None, account_filter='All', limit=20):
         median_spend,
         order_count,
         median_days_between_orders,
-        "days since last order" AS recency
+        "days since last order" AS recency,
+        "Customer Category" AS customer_category,
+        total_spend
     FROM customer_order_summary
     '''
     conditions = [
@@ -132,7 +134,7 @@ def fetch_overdue_customers(store_name=None, account_filter='All', limit=20):
             return pd.read_sql_query(query, conn, params=params)
     except Exception as e:
         logger.error(f"Error fetching overdue customers: {e}")
-        return pd.DataFrame(columns=['Name', 'days_past_expected', 'median_spend', 'order_count', 'median_days_between_orders', 'recency'])
+        return pd.DataFrame(columns=['Name', 'days_past_expected', 'median_spend', 'order_count', 'median_days_between_orders', 'recency', 'customer_category', 'total_spend'])
 
 def fetch_new_customers_trend(store_name=None, account_filter='All', start_date=None, end_date=None):
     """
@@ -168,6 +170,41 @@ def fetch_new_customers_trend(store_name=None, account_filter='All', start_date=
     except Exception as e:
         logger.error(f"Error fetching new customer trends: {e}")
         return pd.DataFrame(columns=['month_year', 'customer_category', 'new_customer_count'])
+
+def fetch_last_order_trend(store_name=None, account_filter='All', start_date=None, end_date=None):
+    """
+    Retrieves the count of customers based on their last order date per month.
+    """
+    if not os.path.exists(DB_PATH):
+        return pd.DataFrame(columns=['month_year', 'customer_category', 'last_order_count'])
+
+    query = 'SELECT strftime("%Y-%m", last_order_date) AS month_year, "Customer Category" AS customer_category, COUNT("Customer ID") AS last_order_count FROM customer_order_summary'
+    conditions = []
+    params = []
+    if store_name and store_name != 'All':
+        conditions.append('"Store Name" = ?')
+        params.append(store_name)
+    if account_filter != 'All':
+        conditions.append('account_type = ?')
+        params.append(account_filter)
+    if start_date:
+        conditions.append('last_order_date >= ?')
+        params.append(start_date)
+    if end_date:
+        conditions.append('last_order_date <= ?')
+        params.append(end_date)
+    
+    if conditions:
+        query += ' WHERE ' + ' AND '.join(conditions)
+    
+    query += ' GROUP BY month_year, customer_category ORDER BY month_year ASC'
+
+    try:
+        with sqlite3.connect(DB_PATH) as conn:
+            return pd.read_sql_query(query, conn, params=params)
+    except Exception as e:
+        logger.error(f"Error fetching last order trends: {e}")
+        return pd.DataFrame(columns=['month_year', 'customer_category', 'last_order_count'])
 
 def fetch_monthly_revenue(store_name=None, start_date=None, end_date=None, account_filter='All'):
     """
