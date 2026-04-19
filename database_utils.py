@@ -93,6 +93,38 @@ def fetch_top_customers(store_name=None, account_filter='All', limit=50):
         logger.error(f"Error fetching top customers: {e}")
         return pd.DataFrame(columns=['Name', 'total_spend', 'median_spend', 'customer_category', 'order_count', 'discount', 'recency', 'median_days_between_orders'])
 
+def fetch_overdue_customers(store_name=None, account_filter='All', limit=20):
+    """
+    Retrieves customers who are past their expected visit date based on median order intervals.
+    """
+    if not os.path.exists(DB_PATH):
+        return pd.DataFrame(columns=['Name', 'days_past_expected'])
+
+    query = 'SELECT "Name", ("days since last order" - median_days_between_orders) AS days_past_expected FROM customer_order_summary'
+    conditions = [
+        'median_days_between_orders IS NOT NULL',
+        '("days since last order" - median_days_between_orders) < 180',
+        'order_count > 10'
+    ]
+    params = []
+    if store_name and store_name != 'All':
+        conditions.append('"Store Name" = ?')
+        params.append(store_name)
+    if account_filter != 'All':
+        conditions.append('account_type = ?')
+        params.append(account_filter)
+
+    query += ' WHERE ' + ' AND '.join(conditions)
+    query += ' ORDER BY days_past_expected DESC LIMIT ?'
+    params.append(limit)
+
+    try:
+        with sqlite3.connect(DB_PATH) as conn:
+            return pd.read_sql_query(query, conn, params=params)
+    except Exception as e:
+        logger.error(f"Error fetching overdue customers: {e}")
+        return pd.DataFrame(columns=['Name', 'days_past_expected'])
+
 def fetch_monthly_revenue(store_name=None, start_date=None, end_date=None, account_filter='All'):
     """
     Connects to the SQLite database and retrieves total revenue aggregated by month.

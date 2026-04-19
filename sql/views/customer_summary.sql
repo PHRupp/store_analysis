@@ -2,6 +2,7 @@ CREATE VIEW IF NOT EXISTS customer_order_summary AS
 WITH order_metrics AS (
     SELECT
         "Store ID",
+        "Store Name",
         "Customer ID",
         SUM("Total") AS total_spend,
         AVG("Total") AS avg_spend,
@@ -9,7 +10,7 @@ WITH order_metrics AS (
         MIN("Placed") AS first_order_date,
         MAX("Placed") AS last_order_date
     FROM orders
-    GROUP BY "Store ID", "Customer ID"
+    GROUP BY "Store ID", "Store Name", "Customer ID"
 ),
 velocity_metrics AS (
     SELECT
@@ -55,6 +56,7 @@ median_spend_calculation AS (
 )
 SELECT
     c."Store ID",
+    om."Store Name",
     c."Customer ID",
     c."Name",
     c."Discount",

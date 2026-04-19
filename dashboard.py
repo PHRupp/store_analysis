@@ -9,7 +9,7 @@ import os
 import sys
 
 # Import data fetching utilities
-from database_utils import fetch_store_names, fetch_customer_stats, fetch_monthly_revenue, fetch_top_customers, fetch_order_trends, fetch_category_order_trends, fetch_order_totals
+from database_utils import fetch_store_names, fetch_customer_stats, fetch_monthly_revenue, fetch_top_customers, fetch_order_trends, fetch_category_order_trends, fetch_order_totals, fetch_overdue_customers
 
 # Configure logging to screen and file
 log_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "log")
@@ -251,8 +251,9 @@ def update_store_analysis(selected_store_name, start_date, end_date, account_fil
 def update_customer_analysis(selected_store, account_filter):
     df_cust = fetch_customer_stats(selected_store, account_filter)
     df_top = fetch_top_customers(selected_store, account_filter)
+    df_overdue = fetch_overdue_customers(selected_store, account_filter)
     
-    if df_cust.empty and df_top.empty:
+    if df_cust.empty and df_top.empty and df_overdue.empty:
         return html.Div("No customer data available.", style={'color': '#7FDBFF', 'textAlign': 'center'})
 
     # Define a consistent order for categories to ensure matching colors across plots
@@ -319,6 +320,18 @@ def update_customer_analysis(selected_store, account_filter):
     
     fig_top.update_layout(hovermode='x unified')
 
+    # Overdue Customers Bar Chart
+    fig_overdue = px.bar(
+        df_overdue, 
+        x='Name', 
+        y='days_past_expected',
+        title='Customers Past Expected Visit (Days)',
+        labels={'days_past_expected': 'Days Overdue', 'Name': 'Customer'},
+        template='plotly_dark'
+    )
+    fig_overdue.update_traces(marker_color='#FF4B4B') # Red to signal risk
+    fig_overdue.update_layout(plot_bgcolor='#111111', paper_bgcolor='#111111', font_color='#7FDBFF')
+
     for fig in [fig_count, fig_spend, fig_top]:
         fig.update_layout(
             plot_bgcolor='#111111',
@@ -335,8 +348,9 @@ def update_customer_analysis(selected_store, account_filter):
         ], style={'width': '50%', 'display': 'inline-block'})
     ], style={'display': 'flex'}),
     html.Div([
-        dcc.Graph(id='top-customer-bar-line', figure=fig_top)
-    ]),)
+        html.Div([dcc.Graph(id='top-customer-bar-line', figure=fig_top)], style={'width': '50%'}),
+        html.Div([dcc.Graph(id='overdue-customer-bar', figure=fig_overdue)], style={'width': '50%'})
+    ], style={'display': 'flex'}),)
 
 if __name__ == '__main__':
     app.run(debug=True)
