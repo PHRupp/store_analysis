@@ -9,7 +9,7 @@ import os
 import sys
 
 # Import data fetching utilities
-from database_utils import fetch_store_names, fetch_customer_stats, fetch_monthly_revenue, fetch_top_customers, fetch_order_trends, fetch_category_order_trends
+from database_utils import fetch_store_names, fetch_customer_stats, fetch_monthly_revenue, fetch_top_customers, fetch_order_trends, fetch_category_order_trends, fetch_order_totals
 
 # Configure logging to screen and file
 log_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "log")
@@ -117,6 +117,7 @@ def update_store_analysis(selected_store_name, start_date, end_date, account_fil
     df_revenue = fetch_monthly_revenue(selected_store_name, start_date, end_date, account_filter)
     df_trends = fetch_order_trends(selected_store_name, start_date, end_date, account_filter)
     df_cat_trends = fetch_category_order_trends(selected_store_name, start_date, end_date, account_filter)
+    df_totals = fetch_order_totals(selected_store_name, start_date, end_date, account_filter)
     
     title = f'Monthly Revenue Overview - Store: {selected_store_name}'
     
@@ -208,13 +209,43 @@ def update_store_analysis(selected_store_name, start_date, end_date, account_fil
     else:
         fig_cat = px.scatter(title="No category trend data available.", template='plotly_dark')
         fig_cat.update_layout(plot_bgcolor='#111111', paper_bgcolor='#111111', font_color='#7FDBFF')
+
+    # Order Totals Histogram
+    if not df_totals.empty:
+        # Clip values at 200 to create a single overflow bin for all orders > $200
+        df_hist_data = df_totals.copy()
+        df_hist_data['Total'] = df_hist_data['Total'].clip(upper=200)
+
+        fig_hist = px.histogram(
+            df_hist_data, x='Total',
+            title='Distribution of Order Totals',
+            labels={'Total': 'Order Total ($)'},
+            template='plotly_dark',
+            nbins=40 # This creates consistent $5 bins for the 0-200 range
+        )
+        fig_hist.update_layout(
+            plot_bgcolor='#111111', paper_bgcolor='#111111', font_color='#7FDBFF',
+            bargap=0.1,
+            xaxis=dict(
+                tickmode='array',
+                tickvals=[0, 50, 100, 150, 200],
+                ticktext=['$0', '$50', '$100', '$150', '$200+']
+            )
+        )
+        fig_hist.update_traces(marker_color='#00CC96')
+    else:
+        fig_hist = px.scatter(title="No order total data available.", template='plotly_dark')
+        fig_hist.update_layout(plot_bgcolor='#111111', paper_bgcolor='#111111', font_color='#7FDBFF')
     
     return html.Div([
         dcc.Graph(id='revenue-bar-chart', figure=fig),
         html.Div([
             html.Div(dcc.Graph(id='order-trends-chart', figure=fig_trends), style={'width': '50%'}),
             html.Div(dcc.Graph(id='category-trends-chart', figure=fig_cat), style={'width': '50%'})
-        ], style={'display': 'flex'})
+        ], style={'display': 'flex'}),
+        html.Div([
+            dcc.Graph(id='order-totals-histogram', figure=fig_hist)
+        ])
     ])
 
 def update_customer_analysis(selected_store, account_filter):

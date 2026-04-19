@@ -240,3 +240,42 @@ def fetch_category_order_trends(store_name=None, start_date=None, end_date=None,
     except Exception as e:
         logger.error(f"Error fetching category order trends: {e}")
         return pd.DataFrame(columns=['month_year', 'customer_category', 'order_count'])
+
+def fetch_order_totals(store_name=None, start_date=None, end_date=None, account_filter='All'):
+    """
+    Retrieves the raw 'Total' for every order matching the filters for histogram analysis.
+    """
+    if not os.path.exists(DB_PATH):
+        return pd.DataFrame(columns=['Total'])
+    
+    conditions = ['o."Placed" IS NOT NULL']
+    params = []
+    
+    if store_name and store_name != 'All':
+        conditions.append('o."Store Name" = ?')
+        params.append(store_name)
+    if start_date:
+        conditions.append('o."Placed" >= ?')
+        params.append(start_date)
+    if end_date:
+        conditions.append('o."Placed" <= ?')
+        params.append(end_date)
+    if account_filter != 'All':
+        conditions.append("(CASE WHEN c.\"Business ID\" IS NULL OR c.\"Business ID\" = '' THEN 'Retail' ELSE 'Commercial' END) = ?")
+        params.append(account_filter)
+
+    where_clause = " WHERE " + " AND ".join(conditions)
+    
+    query = f'''
+    SELECT o."Total"
+    FROM orders o
+    JOIN customers c ON o."Customer ID" = c."Customer ID" AND o."Store ID" = c."Store ID"
+    {where_clause}
+    '''
+    
+    try:
+        with sqlite3.connect(DB_PATH) as conn:
+            return pd.read_sql_query(query, conn, params=params)
+    except Exception as e:
+        logger.error(f"Error fetching order totals: {e}")
+        return pd.DataFrame(columns=['Total'])
