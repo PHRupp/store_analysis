@@ -9,22 +9,22 @@ DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), DB_NAME)
 
 logger = logging.getLogger(__name__)
 
-def fetch_store_ids():
+def fetch_store_names():
     """
-    Retrieves unique Store IDs from the orders table to populate the dropdown.
+    Retrieves unique Store Names from the store_lookup view.
     """
     if not os.path.exists(DB_PATH):
         return []
-    query = 'SELECT DISTINCT "Store ID" FROM orders WHERE "Store ID" IS NOT NULL ORDER BY "Store ID"'
+    query = 'SELECT "Store Name" FROM store_lookup ORDER BY "Store Name"'
     try:
         with sqlite3.connect(DB_PATH) as conn:
             df = pd.read_sql_query(query, conn)
-            return df["Store ID"].tolist()
+            return df["Store Name"].tolist()
     except Exception as e:
-        logger.error(f"Error fetching store IDs: {e}")
+        logger.error(f"Error fetching store names: {e}")
         return []
 
-def fetch_customer_stats(store_id=None, account_filter='All'):
+def fetch_customer_stats(store_name=None, account_filter='All'):
     """
     Retrieves customer segmentation stats from the customer_order_summary view.
     """
@@ -34,9 +34,9 @@ def fetch_customer_stats(store_id=None, account_filter='All'):
     query = 'SELECT "Customer Category" AS customer_category, COUNT("Customer ID") as customer_count, SUM(total_spend) as total_spend FROM customer_order_summary'
     conditions = []
     params = []
-    if store_id and store_id != 'All':
-        conditions.append('"Store ID" = ?')
-        params.append(store_id)
+    if store_name and store_name != 'All':
+        conditions.append('"Store Name" = ?')
+        params.append(store_name)
     if account_filter != 'All':
         conditions.append('account_type = ?')
         params.append(account_filter)
@@ -52,7 +52,7 @@ def fetch_customer_stats(store_id=None, account_filter='All'):
         logger.error(f"Error fetching customer stats: {e}")
         return pd.DataFrame(columns=['customer_category', 'customer_count', 'total_spend'])
 
-def fetch_top_customers(store_id=None, account_filter='All', limit=50):
+def fetch_top_customers(store_name=None, account_filter='All', limit=50):
     """
     Retrieves the top customers by total spending, including their median spend and detailed metadata.
     """
@@ -73,9 +73,9 @@ def fetch_top_customers(store_id=None, account_filter='All', limit=50):
     '''
     conditions = []
     params = []
-    if store_id and store_id != 'All':
-        conditions.append('"Store ID" = ?')
-        params.append(store_id)
+    if store_name and store_name != 'All':
+        conditions.append('"Store Name" = ?')
+        params.append(store_name)
     if account_filter != 'All':
         conditions.append('account_type = ?')
         params.append(account_filter)
@@ -93,7 +93,7 @@ def fetch_top_customers(store_id=None, account_filter='All', limit=50):
         logger.error(f"Error fetching top customers: {e}")
         return pd.DataFrame(columns=['Name', 'total_spend', 'median_spend', 'customer_category', 'order_count', 'discount', 'recency', 'median_days_between_orders'])
 
-def fetch_monthly_revenue(store_id=None, start_date=None, end_date=None, account_filter='All'):
+def fetch_monthly_revenue(store_name=None, start_date=None, end_date=None, account_filter='All'):
     """
     Connects to the SQLite database and retrieves total revenue aggregated by month.
     Optionally filters by a specific Store ID.
@@ -117,9 +117,9 @@ def fetch_monthly_revenue(store_id=None, start_date=None, end_date=None, account
     '''
     params = []
 
-    if store_id and store_id != 'All':
-        query += ' AND o."Store ID" = ?'
-        params.append(store_id)
+    if store_name and store_name != 'All':
+        query += ' AND o."Store Name" = ?'
+        params.append(store_name)
 
     if start_date:
         query += ' AND o."Placed" >= ?'

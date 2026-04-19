@@ -9,7 +9,7 @@ import os
 import sys
 
 # Import data fetching utilities
-from database_utils import fetch_store_ids, fetch_customer_stats, fetch_monthly_revenue, fetch_top_customers
+from database_utils import fetch_store_names, fetch_customer_stats, fetch_monthly_revenue, fetch_top_customers
 
 # Configure logging to screen and file
 log_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "log")
@@ -27,84 +27,96 @@ logger = logging.getLogger(__name__)
 # Initialize the Dash app
 app = dash.Dash(__name__)
 
-app.layout = html.Div(style={'backgroundColor': '#111111', 'minHeight': '100vh', 'padding': '20px'}, children=[
-    html.H1(children='Store Analysis Dashboard', style={'textAlign': 'center', 'color': '#7FDBFF', 'fontFamily': 'Arial'}),
-    html.Div(children='Performance metrics and sales trends.', style={'textAlign': 'center', 'color': '#7FDBFF', 'marginBottom': '20px'}),
-    
-    html.Div([
+app.layout = html.Div(style={'backgroundColor': '#111111', 'minHeight': '100vh'}, children=[
+    # Fixed Header Section: Contains Title, Filters, and Tabs
+    html.Div(style={
+        'position': 'fixed',
+        'top': '0',
+        'left': '0',
+        'width': '100%',
+        'zIndex': '1000',
+        'backgroundColor': '#111111',
+        'padding': '20px 20px 0 20px',
+        'borderBottom': '1px solid #333333'
+    }, children=[
+        html.H1(children='Store Analysis Dashboard', style={'textAlign': 'center', 'color': '#7FDBFF', 'fontFamily': 'Arial', 'marginTop': '0'}),
+        
         html.Div([
-            html.Label("Select Store ID:", style={'color': '#7FDBFF', 'marginRight': '10px'}),
-            dcc.Dropdown(
-                id='store-id-dropdown',
-                options=[{'label': 'All Stores', 'value': 'All'}] + [{'label': f'Store {i}', 'value': i} for i in fetch_store_ids()],
-                value='All',
-                style={'width': '300px', 'display': 'inline-block', 'verticalAlign': 'middle'}
-            )
-        ], style={'marginRight': '40px'}),
+            html.Div([
+                html.Label("Select Store:", style={'color': '#7FDBFF', 'marginRight': '10px'}),
+                dcc.Dropdown(
+                    id='store-id-dropdown',
+                    options=[{'label': 'All Stores', 'value': 'All'}] + [{'label': str(name), 'value': name} for name in fetch_store_names()],
+                    value='All',
+                    style={'width': '300px', 'display': 'inline-block', 'verticalAlign': 'middle'}
+                )
+            ], style={'marginRight': '40px'}),
 
-        html.Div([
-            html.Label("Select Date Range:", style={'color': '#7FDBFF', 'marginRight': '10px'}),
-            dcc.DatePickerRange(
-                id='date-range-picker',
-                start_date_placeholder_text="Start Date",
-                end_date_placeholder_text="End Date",
-                style={
-                    'color': '#7FDBFF', 'backgroundColor': '#222222', 'border': '1px solid #333333',
-                    'borderRadius': '5px', 'padding': '5px', 'display': 'inline-block', 'verticalAlign': 'middle'
-                }
-            )
-        ]),
+            html.Div([
+                html.Label("Select Date Range:", style={'color': '#7FDBFF', 'marginRight': '10px'}),
+                dcc.DatePickerRange(
+                    id='date-range-picker',
+                    start_date_placeholder_text="Start Date",
+                    end_date_placeholder_text="End Date",
+                    style={
+                        'color': '#7FDBFF', 'backgroundColor': '#222222', 'border': '1px solid #333333',
+                        'borderRadius': '5px', 'padding': '5px', 'display': 'inline-block', 'verticalAlign': 'middle'
+                    }
+                )
+            ]),
 
-        html.Div([
-            html.Label("Select Account Type:", style={'color': '#7FDBFF', 'marginRight': '10px'}),
-            dcc.Dropdown(
-                id='account-type-dropdown',
-                options=[
-                    {'label': 'All Accounts', 'value': 'All'},
-                    {'label': 'Commercial', 'value': 'Commercial'},
-                    {'label': 'Retail', 'value': 'Retail'}
-                ],
-                value='All',
-                style={'width': '200px', 'display': 'inline-block', 'verticalAlign': 'middle'}
-            )
-        ], style={'marginLeft': '40px'})
-    ], style={
-        'display': 'flex', 
-        'justifyContent': 'center', 
-        'alignItems': 'center', 
-        'marginBottom': '40px'
-    }),
+            html.Div([
+                html.Label("Select Account Type:", style={'color': '#7FDBFF', 'marginRight': '10px'}),
+                dcc.Dropdown(
+                    id='account-type-dropdown',
+                    options=[
+                        {'label': 'All Accounts', 'value': 'All'},
+                        {'label': 'Commercial', 'value': 'Commercial'},
+                        {'label': 'Retail', 'value': 'Retail'}
+                    ],
+                    value='All',
+                    style={'width': '200px', 'display': 'inline-block', 'verticalAlign': 'middle'}
+                )
+            ], style={'marginLeft': '40px'})
+        ], style={
+            'display': 'flex', 
+            'justifyContent': 'center', 
+            'alignItems': 'center', 
+            'marginBottom': '20px'
+        }),
 
-    dcc.Tabs(id="tabs-navigation", value='tab-store', children=[
-        dcc.Tab(label='Store Analysis', value='tab-store', 
-                style={'backgroundColor': '#222222', 'color': '#7FDBFF', 'border': '1px solid #333333'},
-                selected_style={'backgroundColor': '#111111', 'color': 'white', 'borderTop': '2px solid #7FDBFF'}),
-        dcc.Tab(label='Customer Analysis', value='tab-customer',
-                style={'backgroundColor': '#222222', 'color': '#7FDBFF', 'border': '1px solid #333333'},
-                selected_style={'backgroundColor': '#111111', 'color': 'white', 'borderTop': '2px solid #7FDBFF'}),
-    ], style={'marginBottom': '20px'}),
+        dcc.Tabs(id="tabs-navigation", value='tab-store', children=[
+            dcc.Tab(label='Store Analysis', value='tab-store', 
+                    style={'backgroundColor': '#222222', 'color': '#7FDBFF', 'border': '1px solid #333333'},
+                    selected_style={'backgroundColor': '#111111', 'color': 'white', 'borderTop': '2px solid #7FDBFF'}),
+            dcc.Tab(label='Customer Analysis', value='tab-customer',
+                    style={'backgroundColor': '#222222', 'color': '#7FDBFF', 'border': '1px solid #333333'},
+                    selected_style={'backgroundColor': '#111111', 'color': 'white', 'borderTop': '2px solid #7FDBFF'}),
+        ], style={'marginBottom': '0px'}),
+    ]),
 
-    html.Div(id='tabs-content')
+    # Scrollable Content Section
+    html.Div(id='tabs-content', style={'padding': '280px 20px 20px 20px'})
 ])
 
 @app.callback(
     Output('tabs-content', 'children'),
     [Input('tabs-navigation', 'value'),
-     Input('store-id-dropdown', 'value'),
+     Input('store-id-dropdown', 'value'), # Now passing Store Name
      Input('date-range-picker', 'start_date'),
      Input('date-range-picker', 'end_date'),
      Input('account-type-dropdown', 'value')]
 )
-def render_tab_content(active_tab, selected_store, start_date, end_date, account_filter):
+def render_tab_content(active_tab, selected_store_name, start_date, end_date, account_filter):
     if active_tab == 'tab-store':
-        return update_store_analysis(selected_store, start_date, end_date, account_filter)
+        return update_store_analysis(selected_store_name, start_date, end_date, account_filter)
     else:
-        return update_customer_analysis(selected_store, account_filter)
+        return update_customer_analysis(selected_store_name, account_filter)
 
-def update_store_analysis(selected_store, start_date, end_date, account_filter):
-    df_revenue = fetch_monthly_revenue(selected_store, start_date, end_date, account_filter)
+def update_store_analysis(selected_store_name, start_date, end_date, account_filter):
+    df_revenue = fetch_monthly_revenue(selected_store_name, start_date, end_date, account_filter)
     
-    title = f'Monthly Revenue Overview - Store: {selected_store}'
+    title = f'Monthly Revenue Overview - Store: {selected_store_name}'
     
     if not df_revenue.empty:
         fig = px.bar(
