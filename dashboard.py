@@ -27,6 +27,15 @@ logger = logging.getLogger(__name__)
 # Initialize the Dash app
 app = dash.Dash(__name__)
 
+# Unified category configuration to ensure matching colors across all charts
+CATEGORY_ORDER = [
+    '1 One Time', '2-3 Testing', '4-9 Comfortable', '10-19 Regular', '20-49 Super Regular', '50+ Big Dawgs'
+]
+CATEGORY_COLORS = {
+    cat: px.colors.qualitative.Plotly[i % len(px.colors.qualitative.Plotly)] 
+    for i, cat in enumerate(CATEGORY_ORDER)
+}
+
 app.layout = html.Div(style={'backgroundColor': '#111111', 'minHeight': '100vh'}, children=[
     # Fixed Header Section: Contains Title, Filters, and Tabs
     html.Div(style={
@@ -188,18 +197,13 @@ def update_store_analysis(selected_store_name, start_date, end_date, account_fil
         fig_trends = px.scatter(title="No trend data available for the selected criteria.", template='plotly_dark')
         fig_trends.update_layout(plot_bgcolor='#111111', paper_bgcolor='#111111', font_color='#7FDBFF')
 
-    # Order count by category bar chart
-    category_order = [
-        '1) One Time', '2) Second', '3) Third', '4) Comfortable', 
-        '5) Regular', '6) Super Regular', '7) Big Dawgs'
-    ]
-
     if not df_cat_trends.empty:
         fig_cat = px.line(
             df_cat_trends, x='month_year', y='order_count', color='customer_category',
             title='Order Volume Trends by Customer Category',
             labels={'month_year': 'Month', 'order_count': 'Orders', 'customer_category': 'Category'},
-            category_orders={'customer_category': category_order},
+            category_orders={'customer_category': CATEGORY_ORDER},
+            color_discrete_map=CATEGORY_COLORS,
             markers=True,
             template='plotly_dark'
         )
@@ -219,8 +223,11 @@ def update_store_analysis(selected_store_name, start_date, end_date, account_fil
 
         fig_hist = px.histogram(
             df_hist_data, x='Total',
-            title='Distribution of Order Totals',
-            labels={'Total': 'Order Total ($)'},
+            color='customer_category',
+            category_orders={'customer_category': CATEGORY_ORDER},
+            color_discrete_map=CATEGORY_COLORS,
+            title='Distribution of Order Totals by Category',
+            labels={'Total': 'Order Total ($)', 'customer_category': 'Category'},
             template='plotly_dark',
             nbins=30 # This creates consistent $5 bins for the 0-150 range
         )
@@ -233,7 +240,6 @@ def update_store_analysis(selected_store_name, start_date, end_date, account_fil
                 ticktext=['$0', '$50', '$100', '$150+']
             )
         )
-        fig_hist.update_traces(marker_color='#00CC96')
     else:
         fig_hist = px.scatter(title="No order total data available.", template='plotly_dark')
         fig_hist.update_layout(plot_bgcolor='#111111', paper_bgcolor='#111111', font_color='#7FDBFF')
@@ -257,25 +263,24 @@ def update_customer_analysis(selected_store, account_filter):
     if df_cust.empty and df_top.empty and df_overdue.empty:
         return html.Div("No customer data available.", style={'color': '#7FDBFF', 'textAlign': 'center'})
 
-    # Define a consistent order for categories to ensure matching colors across plots
-    category_order = [
-        '1 One Time', '2-3 Testing', '4-9 Comfortable', '10-19 Regular', '20-49 Super Regular', '50+ Big Dawgs'
-    ]
-
     fig_count = px.pie(
         df_cust, values='customer_count', names='customer_category',
+        color='customer_category',
         title='Customer Distribution by Category',
         template='plotly_dark',
         hole=0.4,
-        category_orders={'customer_category': category_order}
+        category_orders={'customer_category': CATEGORY_ORDER},
+        color_discrete_map=CATEGORY_COLORS
     )
     
     fig_spend = px.pie(
         df_cust, values='total_spend', names='customer_category',
+        color='customer_category',
         title='Total Spend by Category',
         template='plotly_dark',
         hole=0.4,
-        category_orders={'customer_category': category_order}
+        category_orders={'customer_category': CATEGORY_ORDER},
+        color_discrete_map=CATEGORY_COLORS
     )
 
     # Hover information setup for consistent tooltips across bar and line traces

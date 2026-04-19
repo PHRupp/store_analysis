@@ -287,7 +287,7 @@ def fetch_order_totals(store_name=None, start_date=None, end_date=None, account_
     Retrieves the raw 'Total' for every order matching the filters for histogram analysis.
     """
     if not os.path.exists(DB_PATH):
-        return pd.DataFrame(columns=['Total'])
+        return pd.DataFrame(columns=['Total', 'customer_category'])
     
     conditions = ['o."Placed" IS NOT NULL']
     params = []
@@ -308,9 +308,12 @@ def fetch_order_totals(store_name=None, start_date=None, end_date=None, account_
     where_clause = " WHERE " + " AND ".join(conditions)
     
     query = f'''
-    SELECT o."Total"
+    SELECT 
+        o."Total",
+        cs."Customer Category" as customer_category
     FROM orders o
     JOIN customers c ON o."Customer ID" = c."Customer ID" AND o."Store ID" = c."Store ID"
+    JOIN customer_order_summary cs ON o."Customer ID" = cs."Customer ID" AND o."Store ID" = cs."Store ID"
     {where_clause}
     '''
     
@@ -319,4 +322,4 @@ def fetch_order_totals(store_name=None, start_date=None, end_date=None, account_
             return pd.read_sql_query(query, conn, params=params)
     except Exception as e:
         logger.error(f"Error fetching order totals: {e}")
-        return pd.DataFrame(columns=['Total'])
+        return pd.DataFrame(columns=['Total', 'customer_category'])
