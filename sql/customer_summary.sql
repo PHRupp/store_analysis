@@ -63,8 +63,8 @@ SELECT
     ms.median_spend,
     om.order_count,
     CASE 
-        WHEN c."Business ID" IS NOT NULL AND c."Business ID" != "" THEN 'Commercial' 
-        ELSE 'Retail' 
+        WHEN c."Business ID" IS NULL OR c."Business ID" = '' THEN 'Retail' 
+        ELSE 'Commercial' 
     END as account_type,
     CASE 
         WHEN om.order_count <= 1 THEN '1) One Time'
