@@ -110,7 +110,8 @@ def fetch_monthly_revenue(store_name=None, start_date=None, end_date=None, accou
             WHEN c."Business ID" IS NULL OR c."Business ID" = '' THEN 'Retail' 
             ELSE 'Commercial' 
         END as account_type,
-        SUM(o."Total") as total_revenue 
+        SUM(o."Total") as total_revenue,
+        SUM(o."Pieces") as total_pieces
     FROM orders o
     JOIN customers c ON o."Customer ID" = c."Customer ID" AND o."Store ID" = c."Store ID"
     WHERE o."Placed" IS NOT NULL
@@ -142,3 +143,100 @@ def fetch_monthly_revenue(store_name=None, start_date=None, end_date=None, accou
     except Exception as e:
         logger.error(f"Error querying database: {e}")
         return pd.DataFrame(columns=['month_year', 'total_revenue'])
+
+def fetch_order_trends(store_name=None, start_date=None, end_date=None, account_filter='All'):
+    """
+    Retrieves median invoice amount and order count by month.
+    """
+    if not os.path.exists(DB_PATH):
+        return pd.DataFrame(columns=['month_year', 'median_invoice', 'order_count'])
+    
+    conditions = ['o."Placed" IS NOT NULL']
+    params = []
+    
+    if store_name and store_name != 'All':
+        conditions.append('o."Store Name" = ?')
+        params.append(store_name)
+    if start_date:
+        conditions.append('o."Placed" >= ?')
+        params.append(start_date)
+    if end_date:
+        conditions.append('o."Placed" <= ?')
+        params.append(end_date)
+    if account_filter != 'All':
+        conditions.append("(CASE WHEN c.\"Business ID\" IS NULL OR c.\"Business ID\" = '' THEN 'Retail' ELSE 'Commercial' END) = ?")
+        params.append(account_filter)
+
+    where_clause = " WHERE " + " AND ".join(conditions)
+    
+    query = f'''
+    WITH RawData AS (
+        SELECT 
+            strftime("%Y-%m", o."Placed") as month_year, 
+            o."Total",
+            ROW_NUMBER() OVER (PARTITION BY strftime("%Y-%m", o."Placed") ORDER BY o."Total") as rn,
+            COUNT(*) OVER (PARTITION BY strftime("%Y-%m", o."Placed")) as cnt
+        FROM orders o
+        JOIN customers c ON o."Customer ID" = c."Customer ID" AND o."Store ID" = c."Store ID"
+        {where_clause}
+    )
+    SELECT 
+        month_year, 
+        AVG("Total") as median_invoice,
+        MAX(cnt) as order_count
+    FROM RawData
+    WHERE rn BETWEEN cnt / 2.0 AND cnt / 2.0 + 1
+    GROUP BY month_year
+    ORDER BY month_year ASC
+    '''
+    
+    try:
+        with sqlite3.connect(DB_PATH) as conn:
+            return pd.read_sql_query(query, conn, params=params)
+    except Exception as e:
+        logger.error(f"Error fetching order trends: {e}")
+        return pd.DataFrame(columns=['month_year', 'median_invoice', 'order_count'])
+
+def fetch_category_order_trends(store_name=None, start_date=None, end_date=None, account_filter='All'):
+    """
+    Retrieves the count of orders grouped by month and customer category.
+    """
+    if not os.path.exists(DB_PATH):
+        return pd.DataFrame(columns=['month_year', 'customer_category', 'order_count'])
+
+    conditions = ['o."Placed" IS NOT NULL']
+    params = []
+    
+    if store_name and store_name != 'All':
+        conditions.append('o."Store Name" = ?')
+        params.append(store_name)
+    if start_date:
+        conditions.append('o."Placed" >= ?')
+        params.append(start_date)
+    if end_date:
+        conditions.append('o."Placed" <= ?')
+        params.append(end_date)
+    if account_filter != 'All':
+        conditions.append("(CASE WHEN c.\"Business ID\" IS NULL OR c.\"Business ID\" = '' THEN 'Retail' ELSE 'Commercial' END) = ?")
+        params.append(account_filter)
+
+    where_clause = " WHERE " + " AND ".join(conditions)
+
+    query = f'''
+    SELECT 
+        strftime("%Y-%m", o."Placed") as month_year, 
+        cs."Customer Category" as customer_category,
+        COUNT(o."Order ID") as order_count
+    FROM orders o
+    JOIN customer_order_summary cs ON o."Customer ID" = cs."Customer ID" AND o."Store ID" = cs."Store ID"
+    JOIN customers c ON o."Customer ID" = c."Customer ID" AND o."Store ID" = c."Store ID"
+    {where_clause}
+    GROUP BY month_year, customer_category
+    ORDER BY month_year ASC
+    '''
+    try:
+        with sqlite3.connect(DB_PATH) as conn:
+            return pd.read_sql_query(query, conn, params=params)
+    except Exception as e:
+        logger.error(f"Error fetching category order trends: {e}")
+        return pd.DataFrame(columns=['month_year', 'customer_category', 'order_count'])

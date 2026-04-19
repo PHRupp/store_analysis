@@ -9,7 +9,7 @@ import os
 import sys
 
 # Import data fetching utilities
-from database_utils import fetch_store_names, fetch_customer_stats, fetch_monthly_revenue, fetch_top_customers
+from database_utils import fetch_store_names, fetch_customer_stats, fetch_monthly_revenue, fetch_top_customers, fetch_order_trends, fetch_category_order_trends
 
 # Configure logging to screen and file
 log_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "log")
@@ -115,10 +115,15 @@ def render_tab_content(active_tab, selected_store_name, start_date, end_date, ac
 
 def update_store_analysis(selected_store_name, start_date, end_date, account_filter):
     df_revenue = fetch_monthly_revenue(selected_store_name, start_date, end_date, account_filter)
+    df_trends = fetch_order_trends(selected_store_name, start_date, end_date, account_filter)
+    df_cat_trends = fetch_category_order_trends(selected_store_name, start_date, end_date, account_filter)
     
     title = f'Monthly Revenue Overview - Store: {selected_store_name}'
     
     if not df_revenue.empty:
+        # Group data for the line chart (total pieces per month regardless of account type)
+        df_line = df_revenue.groupby('month_year')['total_pieces'].sum().reset_index()
+
         fig = px.bar(
             df_revenue,
             x='month_year',
@@ -128,16 +133,89 @@ def update_store_analysis(selected_store_name, start_date, end_date, account_fil
             labels={'month_year': 'Month (YYYY-MM)', 'total_revenue': 'Total Revenue ($)', 'account_type': 'Account Type'},
             template='plotly_dark'
         )
+
+        # Add the Line Chart for Pieces on a secondary Y-axis
+        fig.add_trace(
+            go.Scatter(
+                x=df_line['month_year'],
+                y=df_line['total_pieces'],
+                name='Total Pieces',
+                mode='lines+markers',
+                line=dict(color='#FFD700', width=3),
+                yaxis='y2'
+            )
+        )
+
         fig.update_layout(
             plot_bgcolor='#111111',
             paper_bgcolor='#111111',
-            font_color='#7FDBFF'
+            font_color='#7FDBFF',
+            yaxis2=dict(
+                title='Total Pieces',
+                overlaying='y',
+                side='right',
+                showgrid=False,
+                color='#FFD700'
+            ),
+            legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
         )
     else:
         fig = px.scatter(title="No data available for the selected criteria.", template='plotly_dark')
         fig.update_layout(plot_bgcolor='#111111', paper_bgcolor='#111111', font_color='#7FDBFF')
     
-    return dcc.Graph(id='revenue-bar-chart', figure=fig)
+
+    if not df_trends.empty:
+        fig_trends = go.Figure()
+        fig_trends.add_trace(go.Scatter(
+            x=df_trends['month_year'], y=df_trends['median_invoice'],
+            name='Median Invoice', mode='lines+markers', line=dict(color='#00CC96', width=3)
+        ))
+        fig_trends.add_trace(go.Scatter(
+            x=df_trends['month_year'], y=df_trends['order_count'],
+            name='Order Count', mode='lines+markers', line=dict(color='#7FDBFF', width=3),
+            yaxis='y2'
+        ))
+        fig_trends.update_layout(
+            title='Monthly Order Trends: Median Value vs Volume',
+            template='plotly_dark',
+            plot_bgcolor='#111111', paper_bgcolor='#111111', font_color='#7FDBFF',
+            yaxis=dict(title='Median Invoice ($)'),
+            yaxis2=dict(title='Order Count', overlaying='y', side='right', showgrid=False, color='#7FDBFF'),
+            legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
+        )
+    else:
+        fig_trends = px.scatter(title="No trend data available for the selected criteria.", template='plotly_dark')
+        fig_trends.update_layout(plot_bgcolor='#111111', paper_bgcolor='#111111', font_color='#7FDBFF')
+
+    # Order count by category bar chart
+    category_order = [
+        '1) One Time', '2) Second', '3) Third', '4) Comfortable', 
+        '5) Regular', '6) Super Regular', '7) Big Dawgs'
+    ]
+
+    if not df_cat_trends.empty:
+        fig_cat = px.bar(
+            df_cat_trends, x='month_year', y='order_count', color='customer_category',
+            title='Order Volume by Customer Category',
+            labels={'month_year': 'Month', 'order_count': 'Orders', 'customer_category': 'Category'},
+            category_orders={'customer_category': category_order},
+            template='plotly_dark'
+        )
+        fig_cat.update_layout(
+            plot_bgcolor='#111111', paper_bgcolor='#111111', font_color='#7FDBFF',
+            legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
+        )
+    else:
+        fig_cat = px.scatter(title="No category trend data available.", template='plotly_dark')
+        fig_cat.update_layout(plot_bgcolor='#111111', paper_bgcolor='#111111', font_color='#7FDBFF')
+    
+    return html.Div([
+        dcc.Graph(id='revenue-bar-chart', figure=fig),
+        html.Div([
+            html.Div(dcc.Graph(id='order-trends-chart', figure=fig_trends), style={'width': '50%'}),
+            html.Div(dcc.Graph(id='category-trends-chart', figure=fig_cat), style={'width': '50%'})
+        ], style={'display': 'flex'})
+    ])
 
 def update_customer_analysis(selected_store, account_filter):
     df_cust = fetch_customer_stats(selected_store, account_filter)
