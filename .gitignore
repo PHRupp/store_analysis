@@ -19,3 +19,6 @@ ENV/
 
 # package data
 *.egg-info/
+
+# log files
+*.log

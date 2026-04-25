@@ -21,4 +21,4 @@ FROM (
 )
 WHERE
     "days since last order" IS NULL 
-    OR "days since last order" > 0;
+    OR FLOOR("days since last order") > 0;
