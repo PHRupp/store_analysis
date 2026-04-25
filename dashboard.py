@@ -7,8 +7,10 @@ import pandas as pd
 import logging
 import os
 import sys
+import argparse
 
 # Import data fetching utilities
+import database_utils
 from database_utils import (
     fetch_store_names, 
     fetch_customer_stats, 
@@ -36,6 +38,16 @@ logging.basicConfig(
     ]
 )
 logger = logging.getLogger(__name__)
+
+# Parse command line arguments for database location
+parser = argparse.ArgumentParser(description="Store Analysis Dashboard")
+parser.add_argument("--database", default=database_utils.DB_PATH, help="Path to the SQLite database file")
+args, _ = parser.parse_known_args()
+
+# Update the database path in the utility module
+database_utils.DB_PATH = os.path.abspath(args.database)
+database_utils.DB_NAME = os.path.basename(args.database)
+logger.info(f"Using database at: {database_utils.DB_PATH}")
 
 # Initialize the Dash app
 app = dash.Dash(__name__, suppress_callback_exceptions=True)

@@ -37,7 +37,7 @@ def apply_sql_logic(conn):
                 except sqlite3.Error as e:
                     logger.error(f"Error applying {filename}: {e}")
 
-def load_csv_to_sqlite(customers_path, orders_path, items_path, db_name="business_data.db"):
+def load_csv_to_sqlite(customers_path, orders_path, items_path, old_pos_orders_path=None, db_name="business_data.db"):
     """
     Reads customer and order CSV files and stores them in a local SQLite database.
     """
@@ -76,6 +76,18 @@ def load_csv_to_sqlite(customers_path, orders_path, items_path, db_name="busines
                     orders_df[col] = pd.to_datetime(orders_df[col], errors='coerce')
             orders_df.to_sql("orders", conn, if_exists="replace", index=False)
 
+            # Load Old POS Orders if provided
+            if old_pos_orders_path:
+                if os.path.exists(old_pos_orders_path):
+                    logger.info(f"Appending old POS orders: {old_pos_orders_path}...")
+                    old_orders_df = pd.read_csv(old_pos_orders_path)
+                    for col in order_date_cols:
+                        if col in old_orders_df.columns:
+                            old_orders_df[col] = pd.to_datetime(old_orders_df[col], errors='coerce')
+                    old_orders_df.to_sql("orders", conn, if_exists="append", index=False)
+                else:
+                    logger.warning(f"Old POS orders file not found at {old_pos_orders_path}. Skipping append.")
+
             # Load Items
             logger.info(f"Processing items: {items_path}...")
             items_df = pd.read_csv(items_path)
@@ -98,10 +110,12 @@ def main():
     parser.add_argument("--customers", required=True, help="Path to the customers .csv file")
     parser.add_argument("--orders", required=True, help="Path to the orders .csv file")
     parser.add_argument("--items", required=True, help="Path to the items .csv file")
+    parser.add_argument("--old_pos_orders", help="Optional path to old POS orders .csv file to append")
+    parser.add_argument("--database", default="business_data.db", help="Path to the SQLite database file")
 
     args = parser.parse_args()
 
-    load_csv_to_sqlite(args.customers, args.orders, args.items)
+    load_csv_to_sqlite(args.customers, args.orders, args.items, args.old_pos_orders, args.database)
 
 if __name__ == "__main__":
     main()
