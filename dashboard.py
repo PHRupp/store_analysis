@@ -27,26 +27,39 @@ from database_utils import (
 )
 
 # Configure logging to screen and file
+# Parse command line arguments for database location
+parser = argparse.ArgumentParser(description="Store Analysis Dashboard")
+parser.add_argument("--database", default=database_utils.DB_PATH, help="Path to the SQLite database file")
+parser.add_argument("--log-level", type=int, choices=[0, 1, 2, 3], default=1, 
+                    help="Set logging level: 0=ERROR, 1=WARNING, 2=INFO, 3=DEBUG (default: 1)")
+args, _ = parser.parse_known_args()
+
+# Update the database path in the utility module
+database_utils.DB_PATH = os.path.abspath(args.database)
+database_utils.DB_NAME = os.path.basename(args.database)
+
+# Map numeric log level to logging constants
+LOG_LEVEL_MAP = {
+    0: logging.ERROR,
+    1: logging.WARNING,
+    2: logging.INFO,
+    3: logging.DEBUG
+}
+target_log_level = LOG_LEVEL_MAP.get(args.log_level, logging.WARNING)
+
+# Configure logging to screen and file
 log_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "log")
 os.makedirs(log_dir, exist_ok=True)
 logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    level=target_log_level,
+    format='%(asctime)s - %(name)s - %(levelname)s - L%(lineno)d - %(message)s',
     handlers=[
         logging.FileHandler(os.path.join(log_dir, "store_analysis.log")),
         logging.StreamHandler(sys.stdout)
     ]
 )
 logger = logging.getLogger(__name__)
-
-# Parse command line arguments for database location
-parser = argparse.ArgumentParser(description="Store Analysis Dashboard")
-parser.add_argument("--database", default=database_utils.DB_PATH, help="Path to the SQLite database file")
-args, _ = parser.parse_known_args()
-
-# Update the database path in the utility module
-database_utils.DB_PATH = os.path.abspath(args.database)
-database_utils.DB_NAME = os.path.basename(args.database)
+logger.info(f"\n\n####################### START #########################\n\n")
 logger.info(f"Using database at: {database_utils.DB_PATH}")
 
 # Initialize the Dash app
