@@ -1,9 +1,9 @@
 import dash
 from dash import dcc, html, Input, Output, callback
 import plotly.express as px
-from database_utils import fetch_daytime_data, fetch_collection_data
+from database_utils import fetch_daytime_data, fetch_collection_data, fetch_order_totals
 
-dash.register_page(__name__, path='/items', name='Items Analysis', order=4)
+dash.register_page(__name__, path='/orders', name='Orders Analysis', order=4)
 
 CATEGORY_ORDER = [
     '1 One Time', '2-3 Testing', '4-9 Comfortable', '10-19 Regular', '20-49 Super Regular', '50+ Big Dawgs'
@@ -14,40 +14,22 @@ CATEGORY_COLORS = {
 }
 
 layout = html.Div([
-    html.Div([
-        html.Label("Filter by Day:", style={'color': '#7FDBFF', 'marginRight': '10px'}),
-        dcc.Dropdown(
-            id='daytime-day-filter',
-            options=[
-                {'label': 'All Days', 'value': 'All'},
-                {'label': 'Sunday', 'value': '0'},
-                {'label': 'Monday', 'value': '1'},
-                {'label': 'Tuesday', 'value': '2'},
-                {'label': 'Wednesday', 'value': '3'},
-                {'label': 'Thursday', 'value': '4'},
-                {'label': 'Friday', 'value': '5'},
-                {'label': 'Saturday', 'value': '6'},
-            ],
-            value='All',
-            style={'width': '180px', 'display': 'inline-block', 'verticalAlign': 'middle'}
-        )
-    ], style={'display': 'flex', 'justifyContent': 'center', 'marginBottom': '20px'}),
-    html.Div(id='items-content')
+    html.Div(id='orders-content')
 ])
 
 @callback(
-    Output('items-content', 'children'),
+    Output('orders-content', 'children'),
     [Input('store-id-dropdown', 'value'),
      Input('date-range-picker', 'start_date'),
      Input('date-range-picker', 'end_date'),
-     Input('account-type-dropdown', 'value'),
-     Input('daytime-day-filter', 'value')]
+     Input('account-type-dropdown', 'value')]
 )
-def update_items(selected_store_name, start_date, end_date, account_filter, day_of_week):
-    day_val = day_of_week if day_of_week is not None else 'All'
+def update_orders(selected_store_name, start_date, end_date, account_filter):
+    day_val = 'All'
 
     df_placed = fetch_daytime_data(selected_store_name, start_date, end_date, account_filter, day_val)
     df_collected = fetch_collection_data(selected_store_name, start_date, end_date, account_filter, day_val)
+    df_totals = fetch_order_totals(selected_store_name, start_date, end_date, account_filter)
 
     if df_placed.empty and df_collected.empty:
         return html.Div("No daytime or collection data available.", style={'color': '#7FDBFF', 'textAlign': 'center', 'marginTop': '40px'})
@@ -74,7 +56,27 @@ def update_items(selected_store_name, start_date, end_date, account_filter, day_
             bargap=0.1, xaxis=dict(type='category'), legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
         )
     
+    if not df_totals.empty:
+        df_hist_data = df_totals.copy()
+        df_hist_data['Total'] = df_hist_data['Total'].clip(lower=-5, upper=150)
+        fig_hist = px.histogram(
+            df_hist_data, x='Total', color='customer_category',
+            category_orders={'customer_category': CATEGORY_ORDER}, color_discrete_map=CATEGORY_COLORS,
+            title='Distribution of Order Totals by Category', labels={'Total': 'Order Total ($)', 'customer_category': 'Category'},
+            template='plotly_dark', nbins=31
+        )
+        fig_hist.update_layout(
+            plot_bgcolor='#111111', paper_bgcolor='#111111', font_color='#7FDBFF', bargap=0.1,
+            xaxis=dict(tickmode='array', tickvals=[-5, 0, 25, 50, 75, 100, 125, 150], ticktext=['< $0', '$0', '$25', '$50', '$75', '$100', '$125', '$150+'])
+        )
+    else:
+        fig_hist = px.scatter(title="No order total data available.", template='plotly_dark')
+        fig_hist.update_layout(plot_bgcolor='#111111', paper_bgcolor='#111111', font_color='#7FDBFF')
+
     return html.Div([
-        html.Div([dcc.Graph(id='items-placed-histogram', figure=fig_placed)], style={'width': '50%', 'display': 'inline-block'}),
-        html.Div([dcc.Graph(id='items-collected-histogram', figure=fig_collected)], style={'width': '50%', 'display': 'inline-block'})
-    ], style={'display': 'flex'})
+        html.Div([
+            html.Div([dcc.Graph(id='orders-placed-histogram', figure=fig_placed)], style={'width': '50%', 'display': 'inline-block'}),
+            html.Div([dcc.Graph(id='orders-collected-histogram', figure=fig_collected)], style={'width': '50%', 'display': 'inline-block'})
+        ], style={'display': 'flex'}),
+        html.Div([dcc.Graph(id='orders-order-totals-histogram', figure=fig_hist)])
+    ])

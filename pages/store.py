@@ -2,7 +2,7 @@ import dash
 from dash import dcc, html, Input, Output, callback
 import plotly.express as px
 import plotly.graph_objects as go
-from database_utils import fetch_monthly_revenue, fetch_order_trends, fetch_category_order_trends, fetch_order_totals
+from database_utils import fetch_monthly_revenue, fetch_order_trends, fetch_category_order_trends, fetch_new_customers_trend
 
 dash.register_page(__name__, path='/store', name='Store Analysis', order=2)
 
@@ -29,7 +29,7 @@ def update_store(selected_store_name, start_date, end_date, account_filter):
     df_revenue = fetch_monthly_revenue(selected_store_name, start_date, end_date, account_filter)
     df_trends = fetch_order_trends(selected_store_name, start_date, end_date, account_filter)
     df_cat_trends = fetch_category_order_trends(selected_store_name, start_date, end_date, account_filter)
-    df_totals = fetch_order_totals(selected_store_name, start_date, end_date, account_filter)
+    df_new = fetch_new_customers_trend(selected_store_name, account_filter, start_date, end_date)
     
     title = f'Monthly Revenue Overview - Store: {selected_store_name}'
     
@@ -88,22 +88,16 @@ def update_store(selected_store_name, start_date, end_date, account_filter):
         fig_cat = px.scatter(title="No category trend data available.", template='plotly_dark')
         fig_cat.update_layout(plot_bgcolor='#111111', paper_bgcolor='#111111', font_color='#7FDBFF')
 
-    if not df_totals.empty:
-        df_hist_data = df_totals.copy()
-        df_hist_data['Total'] = df_hist_data['Total'].clip(lower=-5, upper=150)
-        fig_hist = px.histogram(
-            df_hist_data, x='Total', color='customer_category',
-            category_orders={'customer_category': CATEGORY_ORDER}, color_discrete_map=CATEGORY_COLORS,
-            title='Distribution of Order Totals by Category', labels={'Total': 'Order Total ($)', 'customer_category': 'Category'},
-            template='plotly_dark', nbins=31
+    if not df_new.empty:
+        fig_new = px.bar(
+            df_new, x='month_year', y='new_customer_count', color='customer_category', title='New Customer Acquisition Trend',
+            labels={'month_year': 'Month', 'new_customer_count': 'New Customers', 'customer_category': 'Category'},
+            category_orders={'customer_category': CATEGORY_ORDER}, color_discrete_map=CATEGORY_COLORS, template='plotly_dark'
         )
-        fig_hist.update_layout(
-            plot_bgcolor='#111111', paper_bgcolor='#111111', font_color='#7FDBFF', bargap=0.1,
-            xaxis=dict(tickmode='array', tickvals=[-5, 0, 25, 50, 75, 100, 125, 150], ticktext=['< $0', '$0', '$25', '$50', '$75', '$100', '$125', '$150+'])
-        )
+        fig_new.update_layout(plot_bgcolor='#111111', paper_bgcolor='#111111', font_color='#7FDBFF', legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1))
     else:
-        fig_hist = px.scatter(title="No order total data available.", template='plotly_dark')
-        fig_hist.update_layout(plot_bgcolor='#111111', paper_bgcolor='#111111', font_color='#7FDBFF')
+        fig_new = px.scatter(title="No acquisition data available.", template='plotly_dark')
+        fig_new.update_layout(plot_bgcolor='#111111', paper_bgcolor='#111111', font_color='#7FDBFF')
 
     return html.Div([
         dcc.Graph(id='store-revenue-bar-chart', figure=fig),
@@ -111,5 +105,5 @@ def update_store(selected_store_name, start_date, end_date, account_filter):
             html.Div(dcc.Graph(id='store-order-trends-chart', figure=fig_trends), style={'width': '50%'}),
             html.Div(dcc.Graph(id='store-category-trends-chart', figure=fig_cat), style={'width': '50%'})
         ], style={'display': 'flex'}),
-        html.Div([dcc.Graph(id='store-order-totals-histogram', figure=fig_hist)])
+        html.Div([dcc.Graph(id='store-new-customer-trend', figure=fig_new)])
     ])
