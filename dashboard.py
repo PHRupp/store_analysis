@@ -331,7 +331,7 @@ def update_store_analysis(selected_store_name, start_date, end_date, account_fil
     else:
         fig_hist = px.scatter(title="No order total data available.", template='plotly_dark')
         fig_hist.update_layout(plot_bgcolor='#111111', paper_bgcolor='#111111', font_color='#7FDBFF')
-    
+
     return html.Div([
         dcc.Graph(id='revenue-bar-chart', figure=fig),
         html.Div([
@@ -546,6 +546,7 @@ def render_daytime_analysis_charts(selected_store_name, start_date, end_date, ac
     # Order Collected Distribution
     fig_collected = px.bar(
         df_collected, 
+        x='collected_hour',
         y='order_count',
         color='customer_category',
         category_orders={
