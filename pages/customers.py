@@ -2,6 +2,7 @@ import dash
 from dash import dcc, html, Input, Output, callback
 import plotly.express as px
 import plotly.graph_objects as go
+import pandas as pd
 from database_utils import (
     fetch_customer_stats,
     fetch_top_customers,
@@ -237,11 +238,13 @@ def update_customers(selected_store, account_filter, start_date, end_date):
         df_hist_data["median_days_between_orders"] = df_hist_data[
             "median_days_between_orders"
         ].clip(upper=180)
+        df_avg_calc = df_intervals[df_intervals["order_count"] >= 10]
+        avg_interval = df_avg_calc["median_days_between_orders"].median()
         fig_intervals = px.histogram(
             df_hist_data,
             x="median_days_between_orders",
             color="customer_category",
-            title="Distribution of Customer Median Intervals",
+            title="Distribution of Days Between Orders",
             labels={
                 "median_days_between_orders": "Median Days Between Orders",
                 "customer_category": "Category",
@@ -251,6 +254,15 @@ def update_customers(selected_store, account_filter, start_date, end_date):
             template="plotly_dark",
             nbins=36,
         )
+        if not pd.isna(avg_interval):
+            fig_intervals.add_vline(
+                x=avg_interval,
+                line_width=2,
+                line_dash="dash",
+                line_color="white",
+                annotation_text=f"Avg (10+ Orders): {avg_interval:.1f} days",
+                annotation_position="top right",
+            )
         fig_intervals.update_layout(
             plot_bgcolor="#111111",
             paper_bgcolor="#111111",

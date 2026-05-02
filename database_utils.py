@@ -728,9 +728,11 @@ def fetch_customer_intervals(
     Retrieves the median interval for each customer for histogram analysis.
     """
     if not os.path.exists(DB_PATH):
-        return pd.DataFrame(columns=["median_days_between_orders", "customer_category"])
+        return pd.DataFrame(
+            columns=["median_days_between_orders", "customer_category", "order_count"]
+        )
 
-    query = 'SELECT median_days_between_orders, "Customer Category" AS customer_category FROM customer_summary'
+    query = 'SELECT median_days_between_orders, "Customer Category" AS customer_category, order_count FROM customer_summary'
     conditions = ["median_days_between_orders IS NOT NULL"]
     params = []
 
@@ -762,4 +764,6 @@ def fetch_customer_intervals(
         return df
     except Exception as e:
         logger.error(f"Error fetching customer intervals: {e}")
-        return pd.DataFrame(columns=["median_days_between_orders", "customer_category"])
+        return pd.DataFrame(
+            columns=["median_days_between_orders", "customer_category", "order_count"]
+        )
