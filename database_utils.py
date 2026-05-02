@@ -2,6 +2,7 @@ import sqlite3
 import pandas as pd
 import os
 import logging
+import time
 
 # Database configuration
 DB_NAME = "business_data.db"
@@ -17,21 +18,25 @@ def fetch_store_names():
         return []
     query = 'SELECT "Store Name" FROM store_lookup ORDER BY "Store Name"'
     try:
+        logger.debug(f"Executing query: {query}")
+        start_time = time.perf_counter()
         with sqlite3.connect(DB_PATH) as conn:
             df = pd.read_sql_query(query, conn)
-            return df["Store Name"].tolist()
+        end_time = time.perf_counter()
+        logger.debug(f"Query completed in {end_time - start_time:.4f} seconds. {len(df)} records returned.")
+        return df["Store Name"].tolist()
     except Exception as e:
         logger.error(f"Error fetching store names: {e}")
         return []
 
-def fetch_customer_stats(store_name=None, account_filter='All'):
+def fetch_customer_stats(store_name=None, account_filter='All', start_date=None, end_date=None):
     """
-    Retrieves customer segmentation stats from the customer_order_summary view.
+    Retrieves customer segmentation stats from the customer_summary table.
     """
     if not os.path.exists(DB_PATH):
         return pd.DataFrame(columns=['customer_category', 'customer_count', 'total_spend'])
 
-    query = 'SELECT "Customer Category" AS customer_category, COUNT("Customer ID") as customer_count, SUM(total_spend) as total_spend FROM customer_order_summary'
+    query = 'SELECT "Customer Category" AS customer_category, COUNT("Customer ID") as customer_count, SUM(total_spend) as total_spend FROM customer_summary'
     conditions = []
     params = []
     if store_name and store_name != 'All':
@@ -40,14 +45,25 @@ def fetch_customer_stats(store_name=None, account_filter='All'):
     if account_filter != 'All':
         conditions.append('account_type = ?')
         params.append(account_filter)
+    if start_date:
+        conditions.append('first_order_date >= ?')
+        params.append(start_date)
+    if end_date:
+        conditions.append('first_order_date <= ?')
+        params.append(end_date)
     
     if conditions:
         query += ' WHERE ' + ' AND '.join(conditions)
     query += ' GROUP BY "Customer Category"'
     
     try:
+        logger.debug(f"Executing query: {query} with params: {params}")
+        start_time = time.perf_counter()
         with sqlite3.connect(DB_PATH) as conn:
-            return pd.read_sql_query(query, conn, params=params)
+            df = pd.read_sql_query(query, conn, params=params)
+        end_time = time.perf_counter()
+        logger.debug(f"Query completed in {end_time - start_time:.4f} seconds. {len(df)} records returned.")
+        return df
     except Exception as e:
         logger.error(f"Error fetching customer stats: {e}")
         return pd.DataFrame(columns=['customer_category', 'customer_count', 'total_spend'])
@@ -69,7 +85,7 @@ def fetch_top_customers(store_name=None, account_filter='All', limit=50):
         "Discount" AS discount, 
         "days since last order" AS recency, 
         median_days_between_orders 
-    FROM customer_order_summary
+    FROM customer_summary
     '''
     conditions = []
     params = []
@@ -87,13 +103,18 @@ def fetch_top_customers(store_name=None, account_filter='All', limit=50):
     params.append(limit)
 
     try:
+        logger.debug(f"Executing query: {query} with params: {params}")
+        start_time = time.perf_counter()
         with sqlite3.connect(DB_PATH) as conn:
-            return pd.read_sql_query(query, conn, params=params)
+            df = pd.read_sql_query(query, conn, params=params)
+        end_time = time.perf_counter()
+        logger.debug(f"Query completed in {end_time - start_time:.4f} seconds. {len(df)} records returned.")
+        return df
     except Exception as e:
         logger.error(f"Error fetching top customers: {e}")
         return pd.DataFrame(columns=['Name', 'total_spend', 'median_spend', 'customer_category', 'order_count', 'discount', 'recency', 'median_days_between_orders'])
 
-def fetch_overdue_customers(store_name=None, account_filter='All', limit=20):
+def fetch_overdue_customers(store_name=None, account_filter='All', limit=20, start_date=None, end_date=None):
     """
     Retrieves customers who are past their expected visit date based on median order intervals.
     """
@@ -110,7 +131,7 @@ def fetch_overdue_customers(store_name=None, account_filter='All', limit=20):
         "days since last order" AS recency,
         "Customer Category" AS customer_category,
         total_spend
-    FROM customer_order_summary
+    FROM customer_summary
     '''
     conditions = [
         'median_days_between_orders IS NOT NULL',
@@ -124,14 +145,25 @@ def fetch_overdue_customers(store_name=None, account_filter='All', limit=20):
     if account_filter != 'All':
         conditions.append('account_type = ?')
         params.append(account_filter)
+    if start_date:
+        conditions.append('first_order_date >= ?')
+        params.append(start_date)
+    if end_date:
+        conditions.append('first_order_date <= ?')
+        params.append(end_date)
 
     query += ' WHERE ' + ' AND '.join(conditions)
     query += ' ORDER BY days_past_expected DESC LIMIT ?'
     params.append(limit)
 
     try:
+        logger.debug(f"Executing query: {query} with params: {params}")
+        start_time = time.perf_counter()
         with sqlite3.connect(DB_PATH) as conn:
-            return pd.read_sql_query(query, conn, params=params)
+            df = pd.read_sql_query(query, conn, params=params)
+        end_time = time.perf_counter()
+        logger.debug(f"Query completed in {end_time - start_time:.4f} seconds. {len(df)} records returned.")
+        return df
     except Exception as e:
         logger.error(f"Error fetching overdue customers: {e}")
         return pd.DataFrame(columns=['Name', 'days_past_expected', 'median_spend', 'order_count', 'median_days_between_orders', 'recency', 'customer_category', 'total_spend'])
@@ -143,7 +175,7 @@ def fetch_new_customers_trend(store_name=None, account_filter='All', start_date=
     if not os.path.exists(DB_PATH):
         return pd.DataFrame(columns=['month_year', 'customer_category', 'new_customer_count'])
 
-    query = 'SELECT strftime("%Y-%m", first_order_date) AS month_year, "Customer Category" AS customer_category, COUNT("Customer ID") AS new_customer_count FROM customer_order_summary'
+    query = 'SELECT strftime("%Y-%m", first_order_date) AS month_year, "Customer Category" AS customer_category, COUNT("Customer ID") AS new_customer_count FROM customer_summary'
     conditions = []
     params = []
     if store_name and store_name != 'All':
@@ -165,8 +197,13 @@ def fetch_new_customers_trend(store_name=None, account_filter='All', start_date=
     query += ' GROUP BY month_year, customer_category ORDER BY month_year ASC'
 
     try:
+        logger.debug(f"Executing query: {query} with params: {params}")
+        start_time = time.perf_counter()
         with sqlite3.connect(DB_PATH) as conn:
-            return pd.read_sql_query(query, conn, params=params)
+            df = pd.read_sql_query(query, conn, params=params)
+        end_time = time.perf_counter()
+        logger.debug(f"Query completed in {end_time - start_time:.4f} seconds. {len(df)} records returned.")
+        return df
     except Exception as e:
         logger.error(f"Error fetching new customer trends: {e}")
         return pd.DataFrame(columns=['month_year', 'customer_category', 'new_customer_count'])
@@ -178,7 +215,7 @@ def fetch_last_order_trend(store_name=None, account_filter='All', start_date=Non
     if not os.path.exists(DB_PATH):
         return pd.DataFrame(columns=['month_year', 'customer_category', 'last_order_count'])
 
-    query = 'SELECT strftime("%Y-%m", last_order_date) AS month_year, "Customer Category" AS customer_category, COUNT("Customer ID") AS last_order_count FROM customer_order_summary'
+    query = 'SELECT strftime("%Y-%m", last_order_date) AS month_year, "Customer Category" AS customer_category, COUNT("Customer ID") AS last_order_count FROM customer_summary'
     conditions = []
     params = []
     if store_name and store_name != 'All':
@@ -200,8 +237,13 @@ def fetch_last_order_trend(store_name=None, account_filter='All', start_date=Non
     query += ' GROUP BY month_year, customer_category ORDER BY month_year ASC'
 
     try:
+        logger.debug(f"Executing query: {query} with params: {params}")
+        start_time = time.perf_counter()
         with sqlite3.connect(DB_PATH) as conn:
-            return pd.read_sql_query(query, conn, params=params)
+            df = pd.read_sql_query(query, conn, params=params)
+        end_time = time.perf_counter()
+        logger.debug(f"Query completed in {end_time - start_time:.4f} seconds. {len(df)} records returned.")
+        return df
     except Exception as e:
         logger.error(f"Error fetching last order trends: {e}")
         return pd.DataFrame(columns=['month_year', 'customer_category', 'last_order_count'])
@@ -250,9 +292,13 @@ def fetch_monthly_revenue(store_name=None, start_date=None, end_date=None, accou
     query += ' GROUP BY month_year, account_type ORDER BY month_year ASC'
 
     try:
+        logger.debug(f"Executing query: {query} with params: {params}")
+        start_time = time.perf_counter()
         with sqlite3.connect(DB_PATH) as conn:
             df = pd.read_sql_query(query, conn, params=params)
-            return df
+        end_time = time.perf_counter()
+        logger.debug(f"Query completed in {end_time - start_time:.4f} seconds. {len(df)} records returned.")
+        return df
     except Exception as e:
         logger.error(f"Error querying database: {e}")
         return pd.DataFrame(columns=['month_year', 'total_revenue'])
@@ -304,8 +350,13 @@ def fetch_order_trends(store_name=None, start_date=None, end_date=None, account_
     '''
     
     try:
+        logger.debug(f"Executing query: {query} with params: {params}")
+        start_time = time.perf_counter()
         with sqlite3.connect(DB_PATH) as conn:
-            return pd.read_sql_query(query, conn, params=params)
+            df = pd.read_sql_query(query, conn, params=params)
+        end_time = time.perf_counter()
+        logger.debug(f"Query completed in {end_time - start_time:.4f} seconds. {len(df)} records returned.")
+        return df
     except Exception as e:
         logger.error(f"Error fetching order trends: {e}")
         return pd.DataFrame(columns=['month_year', 'median_invoice', 'order_count'])
@@ -341,15 +392,20 @@ def fetch_category_order_trends(store_name=None, start_date=None, end_date=None,
         cs."Customer Category" as customer_category,
         COUNT(o."Order ID") as order_count
     FROM orders o
-    JOIN customer_order_summary cs ON o."Customer ID" = cs."Customer ID" AND o."Store ID" = cs."Store ID"
+    JOIN customer_summary cs ON o."Customer ID" = cs."Customer ID" AND o."Store ID" = cs."Store ID"
     JOIN customers c ON o."Customer ID" = c."Customer ID" AND o."Store ID" = c."Store ID"
     {where_clause}
     GROUP BY month_year, customer_category
     ORDER BY month_year ASC
     '''
     try:
+        logger.debug(f"Executing query: {query} with params: {params}")
+        start_time = time.perf_counter()
         with sqlite3.connect(DB_PATH) as conn:
-            return pd.read_sql_query(query, conn, params=params)
+            df = pd.read_sql_query(query, conn, params=params)
+        end_time = time.perf_counter()
+        logger.debug(f"Query completed in {end_time - start_time:.4f} seconds. {len(df)} records returned.")
+        return df
     except Exception as e:
         logger.error(f"Error fetching category order trends: {e}")
         return pd.DataFrame(columns=['month_year', 'customer_category', 'order_count'])
@@ -385,13 +441,18 @@ def fetch_order_totals(store_name=None, start_date=None, end_date=None, account_
         cs."Customer Category" as customer_category
     FROM orders o
     JOIN customers c ON o."Customer ID" = c."Customer ID" AND o."Store ID" = c."Store ID"
-    JOIN customer_order_summary cs ON o."Customer ID" = cs."Customer ID" AND o."Store ID" = cs."Store ID"
+    JOIN customer_summary cs ON o."Customer ID" = cs."Customer ID" AND o."Store ID" = cs."Store ID"
     {where_clause}
     '''
     
     try:
+        logger.debug(f"Executing query: {query} with params: {params}")
+        start_time = time.perf_counter()
         with sqlite3.connect(DB_PATH) as conn:
-            return pd.read_sql_query(query, conn, params=params)
+            df = pd.read_sql_query(query, conn, params=params)
+        end_time = time.perf_counter()
+        logger.debug(f"Query completed in {end_time - start_time:.4f} seconds. {len(df)} records returned.")
+        return df
     except Exception as e:
         logger.error(f"Error fetching order totals: {e}")
         return pd.DataFrame(columns=['Total', 'customer_category'])
@@ -401,7 +462,7 @@ def fetch_daytime_data(store_name=None, start_date=None, end_date=None, account_
     Retrieves the time component of 'Placed' and customer category for daytime analysis.
     """
     if not os.path.exists(DB_PATH):
-        return pd.DataFrame(columns=['placed_hour', 'customer_category'])
+        return pd.DataFrame(columns=['placed_hour', 'customer_category', 'order_count'])
     
     conditions = [
         'o."Placed" IS NOT NULL',
@@ -431,26 +492,33 @@ def fetch_daytime_data(store_name=None, start_date=None, end_date=None, account_
     query = f'''
     SELECT 
         strftime('%H', o."Placed") as placed_hour,
-        cs."Customer Category" as customer_category
+        cs."Customer Category" as customer_category,
+        COUNT(*) as order_count
     FROM orders o
     JOIN customers c ON o."Customer ID" = c."Customer ID" AND o."Store ID" = c."Store ID"
-    JOIN customer_order_summary cs ON o."Customer ID" = cs."Customer ID" AND o."Store ID" = cs."Store ID"
+    JOIN customer_summary cs ON o."Customer ID" = cs."Customer ID" AND o."Store ID" = cs."Store ID"
     {where_clause}
+    GROUP BY 1, 2
     '''
     
     try:
+        logger.debug(f"Executing query: {query} with params: {params}")
+        start_time = time.perf_counter()
         with sqlite3.connect(DB_PATH) as conn:
-            return pd.read_sql_query(query, conn, params=params)
+            df = pd.read_sql_query(query, conn, params=params)
+        end_time = time.perf_counter()
+        logger.debug(f"Query completed in {end_time - start_time:.4f} seconds. {len(df)} records returned.")
+        return df
     except Exception as e:
         logger.error(f"Error fetching daytime data: {e}")
-        return pd.DataFrame(columns=['placed_hour', 'customer_category'])
+        return pd.DataFrame(columns=['placed_hour', 'customer_category', 'order_count'])
 
 def fetch_collection_data(store_name=None, start_date=None, end_date=None, account_filter='All', day_of_week='All'):
     """
     Retrieves the time component of 'Collected' and customer category for daytime analysis.
     """
     if not os.path.exists(DB_PATH):
-        return pd.DataFrame(columns=['collected_hour', 'customer_category'])
+        return pd.DataFrame(columns=['collected_hour', 'customer_category', 'order_count'])
     
     conditions = [
         'o."Collected" IS NOT NULL',
@@ -480,16 +548,23 @@ def fetch_collection_data(store_name=None, start_date=None, end_date=None, accou
     query = f'''
     SELECT 
         strftime('%H', o."Collected") as collected_hour,
-        cs."Customer Category" as customer_category
+        cs."Customer Category" as customer_category,
+        COUNT(*) as order_count
     FROM orders o
     JOIN customers c ON o."Customer ID" = c."Customer ID" AND o."Store ID" = c."Store ID"
-    JOIN customer_order_summary cs ON o."Customer ID" = cs."Customer ID" AND o."Store ID" = cs."Store ID"
+    JOIN customer_summary cs ON o."Customer ID" = cs."Customer ID" AND o."Store ID" = cs."Store ID"
     {where_clause}
+    GROUP BY 1, 2
     '''
     
     try:
+        logger.debug(f"Executing query: {query} with params: {params}")
+        start_time = time.perf_counter()
         with sqlite3.connect(DB_PATH) as conn:
-            return pd.read_sql_query(query, conn, params=params)
+            df = pd.read_sql_query(query, conn, params=params)
+        end_time = time.perf_counter()
+        logger.debug(f"Query completed in {end_time - start_time:.4f} seconds. {len(df)} records returned.")
+        return df
     except Exception as e:
         logger.error(f"Error fetching collection data: {e}")
-        return pd.DataFrame(columns=['collected_hour', 'customer_category'])
+        return pd.DataFrame(columns=['collected_hour', 'customer_category', 'order_count'])

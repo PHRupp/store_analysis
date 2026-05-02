@@ -2,7 +2,7 @@ import dash
 from dash import dcc, html, Input, Output
 import plotly.express as px
 import plotly.graph_objects as go
-from datetime import datetime
+import datetime
 import pandas as pd
 import logging
 import os
@@ -27,26 +27,39 @@ from database_utils import (
 )
 
 # Configure logging to screen and file
+# Parse command line arguments for database location
+parser = argparse.ArgumentParser(description="Store Analysis Dashboard")
+parser.add_argument("--database", default=database_utils.DB_PATH, help="Path to the SQLite database file")
+parser.add_argument("--log-level", type=int, choices=[0, 1, 2, 3], default=1, 
+                    help="Set logging level: 0=ERROR, 1=WARNING, 2=INFO, 3=DEBUG (default: 1)")
+args, _ = parser.parse_known_args()
+
+# Update the database path in the utility module
+database_utils.DB_PATH = os.path.abspath(args.database)
+database_utils.DB_NAME = os.path.basename(args.database)
+
+# Map numeric log level to logging constants
+LOG_LEVEL_MAP = {
+    0: logging.ERROR,
+    1: logging.WARNING,
+    2: logging.INFO,
+    3: logging.DEBUG
+}
+target_log_level = LOG_LEVEL_MAP.get(args.log_level, logging.WARNING)
+
+# Configure logging to screen and file
 log_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "log")
 os.makedirs(log_dir, exist_ok=True)
 logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    level=target_log_level,
+    format='%(asctime)s - %(name)s - %(levelname)s - L%(lineno)d - %(message)s',
     handlers=[
         logging.FileHandler(os.path.join(log_dir, "store_analysis.log")),
         logging.StreamHandler(sys.stdout)
     ]
 )
 logger = logging.getLogger(__name__)
-
-# Parse command line arguments for database location
-parser = argparse.ArgumentParser(description="Store Analysis Dashboard")
-parser.add_argument("--database", default=database_utils.DB_PATH, help="Path to the SQLite database file")
-args, _ = parser.parse_known_args()
-
-# Update the database path in the utility module
-database_utils.DB_PATH = os.path.abspath(args.database)
-database_utils.DB_NAME = os.path.basename(args.database)
+logger.info(f"\n\n####################### START #########################\n\n")
 logger.info(f"Using database at: {database_utils.DB_PATH}")
 
 # Initialize the Dash app
@@ -92,6 +105,8 @@ app.layout = html.Div(style={'backgroundColor': '#111111', 'minHeight': '100vh'}
                     id='date-range-picker',
                     start_date_placeholder_text="Start Date",
                     end_date_placeholder_text="End Date",
+                    start_date=datetime.date(2021, 9, 1),
+                    end_date=datetime.date.today(),
                     style={
                         'color': '#7FDBFF', 'backgroundColor': '#222222', 'border': '1px solid #333333',
                         'borderRadius': '5px', 'padding': '5px', 'display': 'inline-block', 'verticalAlign': 'middle'
@@ -290,9 +305,9 @@ def update_store_analysis(selected_store_name, start_date, end_date, account_fil
 
     # Order Totals Histogram
     if not df_totals.empty:
-        # Clip values at 150 to create a single overflow bin for all orders > $150
+        # Clip values at -5 and 150 to create single bins for negatives and overflow
         df_hist_data = df_totals.copy()
-        df_hist_data['Total'] = df_hist_data['Total'].clip(upper=150)
+        df_hist_data['Total'] = df_hist_data['Total'].clip(lower=-5, upper=150)
 
         fig_hist = px.histogram(
             df_hist_data, x='Total',
@@ -302,21 +317,21 @@ def update_store_analysis(selected_store_name, start_date, end_date, account_fil
             title='Distribution of Order Totals by Category',
             labels={'Total': 'Order Total ($)', 'customer_category': 'Category'},
             template='plotly_dark',
-            nbins=30 # This creates consistent $5 bins for the 0-150 range
+            nbins=31 # This creates consistent $5 bins for the -5 to 150 range
         )
         fig_hist.update_layout(
             plot_bgcolor='#111111', paper_bgcolor='#111111', font_color='#7FDBFF',
             bargap=0.1,
             xaxis=dict(
                 tickmode='array',
-                tickvals=[0, 50, 100, 150],
-                ticktext=['$0', '$50', '$100', '$150+']
+                tickvals=[-5, 0, 25, 50, 75, 100, 125, 150],
+                ticktext=['< $0', '$0', '$25', '$50', '$75', '$100', '$125', '$150+']
             )
         )
     else:
         fig_hist = px.scatter(title="No order total data available.", template='plotly_dark')
         fig_hist.update_layout(plot_bgcolor='#111111', paper_bgcolor='#111111', font_color='#7FDBFF')
-    
+
     return html.Div([
         dcc.Graph(id='revenue-bar-chart', figure=fig),
         html.Div([
@@ -329,12 +344,12 @@ def update_store_analysis(selected_store_name, start_date, end_date, account_fil
     ])
 
 def update_customer_analysis(selected_store, account_filter, start_date, end_date):
-    df_cust = fetch_customer_stats(selected_store, account_filter)
+    df_cust = fetch_customer_stats(selected_store, account_filter, start_date, end_date)
     df_top = fetch_top_customers(selected_store, account_filter)
-    df_overdue = fetch_overdue_customers(selected_store, account_filter)
+    df_overdue = fetch_overdue_customers(selected_store, account_filter, start_date=start_date, end_date=end_date)
     df_new = fetch_new_customers_trend(selected_store, account_filter, start_date, end_date)
     df_returning = fetch_last_order_trend(selected_store, account_filter, start_date, end_date)
-    
+
     if df_cust.empty and df_top.empty and df_overdue.empty and df_new.empty and df_returning.empty:
         return html.Div("No customer data available.", style={'color': '#7FDBFF', 'textAlign': 'center'})
 
@@ -347,7 +362,7 @@ def update_customer_analysis(selected_store, account_filter, start_date, end_dat
         category_orders={'customer_category': CATEGORY_ORDER},
         color_discrete_map=CATEGORY_COLORS
     )
-    
+
     fig_spend = px.pie(
         df_cust, values='total_spend', names='customer_category',
         color='customer_category',
@@ -395,10 +410,21 @@ def update_customer_analysis(selected_store, account_filter, start_date, end_dat
         line=dict(color='#7FDBFF', width=3),
         mode='lines+markers',
         customdata=df_top[custom_hover_cols],
-        hovertemplate="Median Spend: $%{y:,.2f}<br>" + common_hover
+        hovertemplate="Median Spend: $%{y:,.2f}<br>" + common_hover,
+        yaxis='y2'
     ))
     
-    fig_top.update_layout(hovermode='x unified')
+    fig_top.update_layout(
+        hovermode='x unified',
+        yaxis=dict(title='Total Spending ($)'),
+        yaxis2=dict(
+            title='Median Spend ($)',
+            overlaying='y',
+            side='right',
+            showgrid=False,
+            color='#7FDBFF'
+        )
+    )
 
     # Overdue Customers Bar Chart
     overdue_hover_cols = ['median_spend', 'order_count', 'median_days_between_orders', 'recency', 'total_spend']
@@ -502,9 +528,10 @@ def render_daytime_analysis_charts(selected_store_name, start_date, end_date, ac
         return html.Div("No daytime or collection data available.", style={'color': '#7FDBFF', 'textAlign': 'center', 'marginTop': '40px'})
 
     # Order Placed Distribution
-    fig_placed = px.histogram(
+    fig_placed = px.bar(
         df_placed, 
         x='placed_hour', 
+        y='order_count',
         color='customer_category',
         category_orders={
             'customer_category': CATEGORY_ORDER,
@@ -512,14 +539,15 @@ def render_daytime_analysis_charts(selected_store_name, start_date, end_date, ac
         },
         color_discrete_map=CATEGORY_COLORS,
         title='Order Placed Distribution (7AM - 7PM)',
-        labels={'placed_hour': 'Hour of Day (24h)', 'customer_category': 'Category'},
+        labels={'placed_hour': 'Hour of Day (24h)', 'customer_category': 'Category', 'order_count': 'Orders'},
         template='plotly_dark'
     )
     
     # Order Collected Distribution
-    fig_collected = px.histogram(
+    fig_collected = px.bar(
         df_collected, 
-        x='collected_hour', 
+        x='collected_hour',
+        y='order_count',
         color='customer_category',
         category_orders={
             'customer_category': CATEGORY_ORDER,
@@ -527,10 +555,9 @@ def render_daytime_analysis_charts(selected_store_name, start_date, end_date, ac
         },
         color_discrete_map=CATEGORY_COLORS,
         title='Order Collected Distribution (7AM - 7PM)',
-        labels={'collected_hour': 'Hour of Day (24h)', 'customer_category': 'Category'},
+        labels={'collected_hour': 'Hour of Day (24h)', 'customer_category': 'Category', 'order_count': 'Orders'},
         template='plotly_dark'
     )
-    
     for fig in [fig_placed, fig_collected]:
         fig.update_layout(
             plot_bgcolor='#111111',
