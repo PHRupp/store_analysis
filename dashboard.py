@@ -346,7 +346,7 @@ def update_store_analysis(selected_store_name, start_date, end_date, account_fil
 def update_customer_analysis(selected_store, account_filter, start_date, end_date):
     df_cust = fetch_customer_stats(selected_store, account_filter, start_date, end_date)
     df_top = fetch_top_customers(selected_store, account_filter)
-    df_overdue = fetch_overdue_customers(selected_store, account_filter)
+    df_overdue = fetch_overdue_customers(selected_store, account_filter, start_date=start_date, end_date=end_date)
     df_new = fetch_new_customers_trend(selected_store, account_filter, start_date, end_date)
     df_returning = fetch_last_order_trend(selected_store, account_filter, start_date, end_date)
 

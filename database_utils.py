@@ -114,7 +114,7 @@ def fetch_top_customers(store_name=None, account_filter='All', limit=50):
         logger.error(f"Error fetching top customers: {e}")
         return pd.DataFrame(columns=['Name', 'total_spend', 'median_spend', 'customer_category', 'order_count', 'discount', 'recency', 'median_days_between_orders'])
 
-def fetch_overdue_customers(store_name=None, account_filter='All', limit=20):
+def fetch_overdue_customers(store_name=None, account_filter='All', limit=20, start_date=None, end_date=None):
     """
     Retrieves customers who are past their expected visit date based on median order intervals.
     """
@@ -145,6 +145,12 @@ def fetch_overdue_customers(store_name=None, account_filter='All', limit=20):
     if account_filter != 'All':
         conditions.append('account_type = ?')
         params.append(account_filter)
+    if start_date:
+        conditions.append('first_order_date >= ?')
+        params.append(start_date)
+    if end_date:
+        conditions.append('first_order_date <= ?')
+        params.append(end_date)
 
     query += ' WHERE ' + ' AND '.join(conditions)
     query += ' ORDER BY days_past_expected DESC LIMIT ?'
