@@ -7,6 +7,7 @@ from database_utils import (
     fetch_order_trends,
     fetch_category_order_trends,
     fetch_new_customers_trend,
+    fetch_last_order_trend,
 )
 
 dash.register_page(__name__, path="/store", name="Store Analysis", order=2)
@@ -24,19 +25,87 @@ CATEGORY_COLORS = {
     for i, cat in enumerate(CATEGORY_ORDER)
 }
 
-layout = html.Div([html.Div(id="store-content")])
+layout = html.Div(
+    [
+        dcc.Graph(id="store-revenue-bar-chart"),
+        html.Div(
+            [
+                html.Div(
+                    dcc.Graph(id="store-order-trends-chart"),
+                    style={"width": "50%"},
+                ),
+                html.Div(
+                    dcc.Graph(id="store-category-trends-chart"),
+                    style={"width": "50%"},
+                ),
+            ],
+            style={"display": "flex"},
+        ),
+        html.Div(
+            [
+                html.Div(
+                    dcc.Graph(id="store-new-customer-trend"),
+                    style={"width": "50%"},
+                ),
+                html.Div(
+                    [
+                        html.Div(
+                            [
+                                html.Label(
+                                    "Minimum Lapsed Days:",
+                                    style={"color": "#7FDBFF", "marginRight": "10px"},
+                                ),
+                                dcc.Input(
+                                    id="lapsed-days-input",
+                                    type="number",
+                                    value=90,
+                                    min=0,
+                                    style={
+                                        "backgroundColor": "#222222",
+                                        "color": "#7FDBFF",
+                                        "border": "1px solid #333333",
+                                        "borderRadius": "5px",
+                                        "padding": "5px",
+                                    },
+                                ),
+                            ],
+                            style={
+                                "display": "flex",
+                                "justifyContent": "center",
+                                "alignItems": "center",
+                                "marginBottom": "10px",
+                            },
+                        ),
+                        dcc.Graph(id="store-lapsed-customer-trend"),
+                    ],
+                    style={"width": "50%"},
+                ),
+            ],
+            style={"display": "flex"},
+        ),
+    ]
+)
 
 
 @callback(
-    Output("store-content", "children"),
+    [
+        Output("store-revenue-bar-chart", "figure"),
+        Output("store-order-trends-chart", "figure"),
+        Output("store-category-trends-chart", "figure"),
+        Output("store-new-customer-trend", "figure"),
+        Output("store-lapsed-customer-trend", "figure"),
+    ],
     [
         Input("store-id-dropdown", "value"),
         Input("date-range-picker", "start_date"),
         Input("date-range-picker", "end_date"),
         Input("account-type-dropdown", "value"),
+        Input("lapsed-days-input", "value"),
     ],
 )
-def update_store(selected_store_name, start_date, end_date, account_filter):
+def update_store(
+    selected_store_name, start_date, end_date, account_filter, min_lapsed_days
+):
     df_revenue = fetch_monthly_revenue(
         selected_store_name, start_date, end_date, account_filter
     )
@@ -48,6 +117,9 @@ def update_store(selected_store_name, start_date, end_date, account_filter):
     )
     df_new = fetch_new_customers_trend(
         selected_store_name, account_filter, start_date, end_date
+    )
+    df_lapsed = fetch_last_order_trend(
+        selected_store_name, account_filter, start_date, end_date, min_lapsed_days
     )
 
     title = f"Monthly Revenue Overview - Store: {selected_store_name}"
@@ -239,22 +311,27 @@ def update_store(selected_store_name, start_date, end_date, account_filter):
             plot_bgcolor="#111111", paper_bgcolor="#111111", font_color="#7FDBFF"
         )
 
-    return html.Div(
-        [
-            dcc.Graph(id="store-revenue-bar-chart", figure=fig),
-            html.Div(
-                [
-                    html.Div(
-                        dcc.Graph(id="store-order-trends-chart", figure=fig_trends),
-                        style={"width": "50%"},
-                    ),
-                    html.Div(
-                        dcc.Graph(id="store-category-trends-chart", figure=fig_cat),
-                        style={"width": "50%"},
-                    ),
-                ],
-                style={"display": "flex"},
-            ),
-            html.Div([dcc.Graph(id="store-new-customer-trend", figure=fig_new)]),
-        ]
-    )
+    if not df_lapsed.empty:
+        df_lapsed_agg = (
+            df_lapsed.groupby("month_year")["last_order_count"].sum().reset_index()
+        )
+        fig_lapsed = px.bar(
+            df_lapsed_agg,
+            x="month_year",
+            y="last_order_count",
+            title="Lapsed Customers by Last Order Month",
+            labels={"month_year": "Month", "last_order_count": "Lapsed Customers"},
+            template="plotly_dark",
+        )
+        fig_lapsed.update_layout(
+            plot_bgcolor="#111111", paper_bgcolor="#111111", font_color="#7FDBFF"
+        )
+    else:
+        fig_lapsed = px.scatter(
+            title="No lapsed customer data available.", template="plotly_dark"
+        )
+        fig_lapsed.update_layout(
+            plot_bgcolor="#111111", paper_bgcolor="#111111", font_color="#7FDBFF"
+        )
+
+    return fig, fig_trends, fig_cat, fig_new, fig_lapsed

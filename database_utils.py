@@ -293,7 +293,11 @@ def fetch_new_customers_trend(
 
 
 def fetch_last_order_trend(
-    store_name=None, account_filter="All", start_date=None, end_date=None
+    store_name=None,
+    account_filter="All",
+    start_date=None,
+    end_date=None,
+    min_lapsed_days=None,
 ):
     """
     Retrieves the count of customers based on their last order date per month.
@@ -318,6 +322,9 @@ def fetch_last_order_trend(
     if end_date:
         conditions.append("last_order_date <= ?")
         params.append(end_date)
+    if min_lapsed_days is not None:
+        conditions.append('"days since last order" > ?')
+        params.append(min_lapsed_days)
 
     if conditions:
         query += " WHERE " + " AND ".join(conditions)
