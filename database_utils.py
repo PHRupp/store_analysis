@@ -29,14 +29,14 @@ def fetch_store_names():
         logger.error(f"Error fetching store names: {e}")
         return []
 
-def fetch_customer_stats(store_name=None, account_filter='All'):
+def fetch_customer_stats(store_name=None, account_filter='All', start_date=None, end_date=None):
     """
-    Retrieves customer segmentation stats from the customer_order_summary view.
+    Retrieves customer segmentation stats from the customer_summary table.
     """
     if not os.path.exists(DB_PATH):
         return pd.DataFrame(columns=['customer_category', 'customer_count', 'total_spend'])
 
-    query = 'SELECT "Customer Category" AS customer_category, COUNT("Customer ID") as customer_count, SUM(total_spend) as total_spend FROM customer_order_summary'
+    query = 'SELECT "Customer Category" AS customer_category, COUNT("Customer ID") as customer_count, SUM(total_spend) as total_spend FROM customer_summary'
     conditions = []
     params = []
     if store_name and store_name != 'All':
@@ -45,6 +45,12 @@ def fetch_customer_stats(store_name=None, account_filter='All'):
     if account_filter != 'All':
         conditions.append('account_type = ?')
         params.append(account_filter)
+    if start_date:
+        conditions.append('first_order_date >= ?')
+        params.append(start_date)
+    if end_date:
+        conditions.append('first_order_date <= ?')
+        params.append(end_date)
     
     if conditions:
         query += ' WHERE ' + ' AND '.join(conditions)
@@ -79,7 +85,7 @@ def fetch_top_customers(store_name=None, account_filter='All', limit=50):
         "Discount" AS discount, 
         "days since last order" AS recency, 
         median_days_between_orders 
-    FROM customer_order_summary
+    FROM customer_summary
     '''
     conditions = []
     params = []
@@ -125,7 +131,7 @@ def fetch_overdue_customers(store_name=None, account_filter='All', limit=20):
         "days since last order" AS recency,
         "Customer Category" AS customer_category,
         total_spend
-    FROM customer_order_summary
+    FROM customer_summary
     '''
     conditions = [
         'median_days_between_orders IS NOT NULL',
@@ -163,7 +169,7 @@ def fetch_new_customers_trend(store_name=None, account_filter='All', start_date=
     if not os.path.exists(DB_PATH):
         return pd.DataFrame(columns=['month_year', 'customer_category', 'new_customer_count'])
 
-    query = 'SELECT strftime("%Y-%m", first_order_date) AS month_year, "Customer Category" AS customer_category, COUNT("Customer ID") AS new_customer_count FROM customer_order_summary'
+    query = 'SELECT strftime("%Y-%m", first_order_date) AS month_year, "Customer Category" AS customer_category, COUNT("Customer ID") AS new_customer_count FROM customer_summary'
     conditions = []
     params = []
     if store_name and store_name != 'All':
@@ -203,7 +209,7 @@ def fetch_last_order_trend(store_name=None, account_filter='All', start_date=Non
     if not os.path.exists(DB_PATH):
         return pd.DataFrame(columns=['month_year', 'customer_category', 'last_order_count'])
 
-    query = 'SELECT strftime("%Y-%m", last_order_date) AS month_year, "Customer Category" AS customer_category, COUNT("Customer ID") AS last_order_count FROM customer_order_summary'
+    query = 'SELECT strftime("%Y-%m", last_order_date) AS month_year, "Customer Category" AS customer_category, COUNT("Customer ID") AS last_order_count FROM customer_summary'
     conditions = []
     params = []
     if store_name and store_name != 'All':
@@ -380,7 +386,7 @@ def fetch_category_order_trends(store_name=None, start_date=None, end_date=None,
         cs."Customer Category" as customer_category,
         COUNT(o."Order ID") as order_count
     FROM orders o
-    JOIN customer_order_summary cs ON o."Customer ID" = cs."Customer ID" AND o."Store ID" = cs."Store ID"
+    JOIN customer_summary cs ON o."Customer ID" = cs."Customer ID" AND o."Store ID" = cs."Store ID"
     JOIN customers c ON o."Customer ID" = c."Customer ID" AND o."Store ID" = c."Store ID"
     {where_clause}
     GROUP BY month_year, customer_category
@@ -429,7 +435,7 @@ def fetch_order_totals(store_name=None, start_date=None, end_date=None, account_
         cs."Customer Category" as customer_category
     FROM orders o
     JOIN customers c ON o."Customer ID" = c."Customer ID" AND o."Store ID" = c."Store ID"
-    JOIN customer_order_summary cs ON o."Customer ID" = cs."Customer ID" AND o."Store ID" = cs."Store ID"
+    JOIN customer_summary cs ON o."Customer ID" = cs."Customer ID" AND o."Store ID" = cs."Store ID"
     {where_clause}
     '''
     
@@ -450,7 +456,7 @@ def fetch_daytime_data(store_name=None, start_date=None, end_date=None, account_
     Retrieves the time component of 'Placed' and customer category for daytime analysis.
     """
     if not os.path.exists(DB_PATH):
-        return pd.DataFrame(columns=['placed_hour', 'customer_category'])
+        return pd.DataFrame(columns=['placed_hour', 'customer_category', 'order_count'])
     
     conditions = [
         'o."Placed" IS NOT NULL',
@@ -480,11 +486,13 @@ def fetch_daytime_data(store_name=None, start_date=None, end_date=None, account_
     query = f'''
     SELECT 
         strftime('%H', o."Placed") as placed_hour,
-        cs."Customer Category" as customer_category
+        cs."Customer Category" as customer_category,
+        COUNT(*) as order_count
     FROM orders o
     JOIN customers c ON o."Customer ID" = c."Customer ID" AND o."Store ID" = c."Store ID"
-    JOIN customer_order_summary cs ON o."Customer ID" = cs."Customer ID" AND o."Store ID" = cs."Store ID"
+    JOIN customer_summary cs ON o."Customer ID" = cs."Customer ID" AND o."Store ID" = cs."Store ID"
     {where_clause}
+    GROUP BY 1, 2
     '''
     
     try:
@@ -497,14 +505,14 @@ def fetch_daytime_data(store_name=None, start_date=None, end_date=None, account_
         return df
     except Exception as e:
         logger.error(f"Error fetching daytime data: {e}")
-        return pd.DataFrame(columns=['placed_hour', 'customer_category'])
+        return pd.DataFrame(columns=['placed_hour', 'customer_category', 'order_count'])
 
 def fetch_collection_data(store_name=None, start_date=None, end_date=None, account_filter='All', day_of_week='All'):
     """
     Retrieves the time component of 'Collected' and customer category for daytime analysis.
     """
     if not os.path.exists(DB_PATH):
-        return pd.DataFrame(columns=['collected_hour', 'customer_category'])
+        return pd.DataFrame(columns=['collected_hour', 'customer_category', 'order_count'])
     
     conditions = [
         'o."Collected" IS NOT NULL',
@@ -534,11 +542,13 @@ def fetch_collection_data(store_name=None, start_date=None, end_date=None, accou
     query = f'''
     SELECT 
         strftime('%H', o."Collected") as collected_hour,
-        cs."Customer Category" as customer_category
+        cs."Customer Category" as customer_category,
+        COUNT(*) as order_count
     FROM orders o
     JOIN customers c ON o."Customer ID" = c."Customer ID" AND o."Store ID" = c."Store ID"
-    JOIN customer_order_summary cs ON o."Customer ID" = cs."Customer ID" AND o."Store ID" = cs."Store ID"
+    JOIN customer_summary cs ON o."Customer ID" = cs."Customer ID" AND o."Store ID" = cs."Store ID"
     {where_clause}
+    GROUP BY 1, 2
     '''
     
     try:
@@ -551,4 +561,4 @@ def fetch_collection_data(store_name=None, start_date=None, end_date=None, accou
         return df
     except Exception as e:
         logger.error(f"Error fetching collection data: {e}")
-        return pd.DataFrame(columns=['collected_hour', 'customer_category'])
+        return pd.DataFrame(columns=['collected_hour', 'customer_category', 'order_count'])

@@ -99,7 +99,17 @@ def load_csv_to_sqlite(customers_path, orders_path, items_path, old_pos_orders_p
             # Apply SQL views and analytical queries
             apply_sql_logic(conn)
 
-            logger.info("Data successfully loaded into 'customers', 'orders', and 'items' tables.")
+            # Materialize the summary view into a table and add indexes for performance
+            logger.info("Materializing customer_summary table...")
+            conn.execute("DROP TABLE IF EXISTS customer_summary")
+            conn.execute("CREATE TABLE customer_summary AS SELECT * FROM customer_order_summary")
+            
+            logger.info("Adding indexes to customer_summary...")
+            conn.execute('CREATE UNIQUE INDEX IF NOT EXISTS idx_summary_store_customer ON customer_summary ("Store ID", "Customer ID")')
+            conn.execute('CREATE INDEX IF NOT EXISTS idx_summary_store_id ON customer_summary ("Store ID")')
+            conn.execute('CREATE INDEX IF NOT EXISTS idx_summary_customer_id ON customer_summary ("Customer ID")')
+
+            logger.info("Data successfully loaded into 'customers', 'orders', 'items', and 'customer_summary' tables.")
 
     except Exception as e:
         logger.error(f"An error occurred during database operations: {e}")
