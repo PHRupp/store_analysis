@@ -402,11 +402,18 @@ def update_store(
         avg_new = df_new_agg["new_customer_count"].mean()
 
         fig_new = px.bar(
-            df_new_agg,
+            df_new,
             x="month_year",
             y="new_customer_count",
+            color="customer_category",
             title="New Customer Acquisition Trend",
-            labels={"month_year": "Month", "new_customer_count": "New Customers"},
+            labels={
+                "month_year": "Month",
+                "new_customer_count": "New Customers",
+                "customer_category": "Category",
+            },
+            category_orders={"customer_category": CATEGORY_ORDER},
+            color_discrete_map=CATEGORY_COLORS,
             template="plotly_dark",
         )
         if not pd.isna(avg_new):
@@ -458,11 +465,18 @@ def update_store(
         )
         avg_lapsed = df_lapsed_agg["last_order_count"].mean()
         fig_lapsed = px.bar(
-            df_lapsed_agg,
+            df_lapsed,
             x="month_year",
             y="last_order_count",
+            color="customer_category",
             title="Lapsed Customers by Last Order Month",
-            labels={"month_year": "Month", "last_order_count": "Lapsed Customers"},
+            labels={
+                "month_year": "Month",
+                "last_order_count": "Lapsed Customers",
+                "customer_category": "Category",
+            },
+            category_orders={"customer_category": CATEGORY_ORDER},
+            color_discrete_map=CATEGORY_COLORS,
             template="plotly_dark",
         )
         if not pd.isna(avg_lapsed):
@@ -475,7 +489,12 @@ def update_store(
                 annotation_position="top right",
             )
         fig_lapsed.update_layout(
-            plot_bgcolor="#111111", paper_bgcolor="#111111", font_color="#7FDBFF"
+            plot_bgcolor="#111111",
+            paper_bgcolor="#111111",
+            font_color="#7FDBFF",
+            legend=dict(
+                orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1
+            ),
         )
     else:
         fig_lapsed = px.scatter(
