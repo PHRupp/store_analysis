@@ -191,21 +191,43 @@ def update_store(
             df_ratio["total_revenue"] / df_ratio["total_pieces"]
         )
 
-        fig_ratio = px.line(
-            df_ratio,
-            x="month_year",
-            y="revenue_per_piece",
-            title="Revenue per Piece Over Time",
-            labels={
-                "month_year": "Month (YYYY-MM)",
-                "revenue_per_piece": "Revenue per Piece ($)",
-            },
-            template="plotly_dark",
-            markers=True,
+        fig_ratio = go.Figure()
+        fig_ratio.add_trace(
+            go.Bar(
+                x=df_ratio["month_year"],
+                y=df_ratio["total_pieces"],
+                name="Total Pieces",
+                marker_color="#FF851B",
+            )
         )
-        fig_ratio.update_traces(line=dict(color="#00CC96", width=3))
+        fig_ratio.add_trace(
+            go.Scatter(
+                x=df_ratio["month_year"],
+                y=df_ratio["revenue_per_piece"],
+                name="Revenue per Piece",
+                mode="lines+markers",
+                line=dict(color="#00CC96", width=3),
+                yaxis="y2",
+            )
+        )
         fig_ratio.update_layout(
-            plot_bgcolor="#111111", paper_bgcolor="#111111", font_color="#7FDBFF"
+            title="Revenue per Piece Over Time",
+            template="plotly_dark",
+            plot_bgcolor="#111111",
+            paper_bgcolor="#111111",
+            font_color="#7FDBFF",
+            yaxis=dict(title="Total Pieces"),
+            yaxis2=dict(
+                title="Revenue per Piece ($)",
+                overlaying="y",
+                side="right",
+                showgrid=False,
+                color="#00CC96",
+                rangemode="tozero",
+            ),
+            legend=dict(
+                orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1
+            ),
         )
 
         if not df_trends.empty:
@@ -248,6 +270,7 @@ def update_store(
                     side="right",
                     showgrid=False,
                     color="#FF851B",
+                    rangemode="tozero",
                 ),
                 legend=dict(
                     orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1
@@ -314,6 +337,7 @@ def update_store(
                 side="right",
                 showgrid=False,
                 color="#00CC96",
+                rangemode="tozero",
             ),
             legend=dict(
                 orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1
