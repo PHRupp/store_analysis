@@ -29,7 +29,19 @@ CATEGORY_COLORS = {
 layout = html.Div(
     [
         dcc.Graph(id="store-revenue-bar-chart"),
-        dcc.Graph(id="store-revenue-per-piece-chart"),
+        html.Div(
+            [
+                html.Div(
+                    dcc.Graph(id="store-revenue-per-piece-chart"),
+                    style={"width": "50%"},
+                ),
+                html.Div(
+                    dcc.Graph(id="store-pieces-per-order-chart"),
+                    style={"width": "50%"},
+                ),
+            ],
+            style={"display": "flex"},
+        ),
         html.Div(
             [
                 html.Div(
@@ -93,6 +105,7 @@ layout = html.Div(
     [
         Output("store-revenue-bar-chart", "figure"),
         Output("store-revenue-per-piece-chart", "figure"),
+        Output("store-pieces-per-order-chart", "figure"),
         Output("store-order-trends-chart", "figure"),
         Output("store-category-trends-chart", "figure"),
         Output("store-new-customer-trend", "figure"),
@@ -194,6 +207,60 @@ def update_store(
         fig_ratio.update_layout(
             plot_bgcolor="#111111", paper_bgcolor="#111111", font_color="#7FDBFF"
         )
+
+        if not df_trends.empty:
+            df_pieces_ratio = pd.merge(
+                df_ratio, df_trends, on="month_year", how="inner"
+            )
+            df_pieces_ratio["pieces_per_order"] = (
+                df_pieces_ratio["total_pieces"] / df_pieces_ratio["order_count"]
+            )
+
+            fig_pieces = go.Figure()
+            fig_pieces.add_trace(
+                go.Bar(
+                    x=df_pieces_ratio["month_year"],
+                    y=df_pieces_ratio["order_count"],
+                    name="Order Count",
+                    marker_color="purple",
+                )
+            )
+            fig_pieces.add_trace(
+                go.Scatter(
+                    x=df_pieces_ratio["month_year"],
+                    y=df_pieces_ratio["pieces_per_order"],
+                    name="Pieces per Order",
+                    mode="lines+markers",
+                    line=dict(color="#FF851B", width=3),
+                    yaxis="y2",
+                )
+            )
+            fig_pieces.update_layout(
+                title="Pieces per Order Over Time",
+                template="plotly_dark",
+                plot_bgcolor="#111111",
+                paper_bgcolor="#111111",
+                font_color="#7FDBFF",
+                yaxis=dict(title="Order Count"),
+                yaxis2=dict(
+                    title="Pieces per Order",
+                    overlaying="y",
+                    side="right",
+                    showgrid=False,
+                    color="#FF851B",
+                ),
+                legend=dict(
+                    orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1
+                ),
+            )
+        else:
+            fig_pieces = px.scatter(
+                title="No order data available for pieces per order.",
+                template="plotly_dark",
+            )
+            fig_pieces.update_layout(
+                plot_bgcolor="#111111", paper_bgcolor="#111111", font_color="#7FDBFF"
+            )
     else:
         fig = px.scatter(
             title="No data available for the selected criteria.", template="plotly_dark"
@@ -205,6 +272,12 @@ def update_store(
             title="No data available for the selected criteria.", template="plotly_dark"
         )
         fig_ratio.update_layout(
+            plot_bgcolor="#111111", paper_bgcolor="#111111", font_color="#7FDBFF"
+        )
+        fig_pieces = px.scatter(
+            title="No data available for the selected criteria.", template="plotly_dark"
+        )
+        fig_pieces.update_layout(
             plot_bgcolor="#111111", paper_bgcolor="#111111", font_color="#7FDBFF"
         )
 
@@ -388,4 +461,4 @@ def update_store(
             plot_bgcolor="#111111", paper_bgcolor="#111111", font_color="#7FDBFF"
         )
 
-    return fig, fig_ratio, fig_trends, fig_cat, fig_new, fig_lapsed
+    return fig, fig_ratio, fig_pieces, fig_trends, fig_cat, fig_new, fig_lapsed
