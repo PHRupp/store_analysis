@@ -1,5 +1,6 @@
 import dash
 from dash import dcc, html, Input, Output, callback
+import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 from database_utils import (
@@ -53,7 +54,7 @@ layout = html.Div(
                             [
                                 html.Label(
                                     "Minimum Lapsed Days:",
-                                    style={"color": "#7FDBFF", "marginRight": "10px"},
+                                    style={"color": "#7FDBFF", "marginRight": "15px"},
                                 ),
                                 dcc.Input(
                                     id="lapsed-days-input",
@@ -268,6 +269,7 @@ def update_store(
         df_new_agg["returning_percentage"] = df_new_agg["returning_percentage"].fillna(
             0
         )
+        avg_new = df_new_agg["new_customer_count"].mean()
 
         fig_new = px.bar(
             df_new_agg,
@@ -277,6 +279,15 @@ def update_store(
             labels={"month_year": "Month", "new_customer_count": "New Customers"},
             template="plotly_dark",
         )
+        if not pd.isna(avg_new):
+            fig_new.add_hline(
+                y=avg_new,
+                line_width=2,
+                line_dash="dash",
+                line_color="white",
+                annotation_text=f"Avg: {avg_new:.1f}",
+                annotation_position="top left",
+            )
         fig_new.add_trace(
             go.Scatter(
                 x=df_new_agg["month_year"],
@@ -315,6 +326,7 @@ def update_store(
         df_lapsed_agg = (
             df_lapsed.groupby("month_year")["last_order_count"].sum().reset_index()
         )
+        avg_lapsed = df_lapsed_agg["last_order_count"].mean()
         fig_lapsed = px.bar(
             df_lapsed_agg,
             x="month_year",
@@ -323,6 +335,15 @@ def update_store(
             labels={"month_year": "Month", "last_order_count": "Lapsed Customers"},
             template="plotly_dark",
         )
+        if not pd.isna(avg_lapsed):
+            fig_lapsed.add_hline(
+                y=avg_lapsed,
+                line_width=2,
+                line_dash="dash",
+                line_color="white",
+                annotation_text=f"Avg: {avg_lapsed:.1f}",
+                annotation_position="top right",
+            )
         fig_lapsed.update_layout(
             plot_bgcolor="#111111", paper_bgcolor="#111111", font_color="#7FDBFF"
         )

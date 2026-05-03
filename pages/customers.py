@@ -202,6 +202,9 @@ def update_customers(selected_store, account_filter, start_date, end_date):
         )
 
     if not df_returning.empty:
+        avg_returning = (
+            df_returning.groupby("month_year")["last_order_count"].sum().mean()
+        )
         fig_returning = px.bar(
             df_returning,
             x="month_year",
@@ -217,6 +220,15 @@ def update_customers(selected_store, account_filter, start_date, end_date):
             color_discrete_map=CATEGORY_COLORS,
             template="plotly_dark",
         )
+        if not pd.isna(avg_returning):
+            fig_returning.add_hline(
+                y=avg_returning,
+                line_width=2,
+                line_dash="dash",
+                line_color="white",
+                annotation_text=f"Avg: {avg_returning:.1f}",
+                annotation_position="top right",
+            )
         fig_returning.update_layout(
             plot_bgcolor="#111111",
             paper_bgcolor="#111111",
@@ -244,7 +256,7 @@ def update_customers(selected_store, account_filter, start_date, end_date):
             df_hist_data,
             x="median_days_between_orders",
             color="customer_category",
-            title="Distribution of Days Between Orders",
+            title="Customer Distribution of Days Between Orders",
             labels={
                 "median_days_between_orders": "Median Days Between Orders",
                 "customer_category": "Category",
