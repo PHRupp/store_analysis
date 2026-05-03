@@ -211,21 +211,20 @@ def update_store(
     if not df_trends.empty:
         fig_trends = go.Figure()
         fig_trends.add_trace(
+            go.Bar(
+                x=df_trends["month_year"],
+                y=df_trends["order_count"],
+                name="Order Count",
+                marker_color="purple",
+            )
+        )
+        fig_trends.add_trace(
             go.Scatter(
                 x=df_trends["month_year"],
                 y=df_trends["median_invoice"],
                 name="Median Invoice",
                 mode="lines+markers",
                 line=dict(color="#00CC96", width=3),
-            )
-        )
-        fig_trends.add_trace(
-            go.Scatter(
-                x=df_trends["month_year"],
-                y=df_trends["order_count"],
-                name="Order Count",
-                mode="lines+markers",
-                line=dict(color="#7FDBFF", width=3),
                 yaxis="y2",
             )
         )
@@ -235,13 +234,13 @@ def update_store(
             plot_bgcolor="#111111",
             paper_bgcolor="#111111",
             font_color="#7FDBFF",
-            yaxis=dict(title="Median Invoice ($)"),
+            yaxis=dict(title="Order Count"),
             yaxis2=dict(
-                title="Order Count",
+                title="Median Invoice ($)",
                 overlaying="y",
                 side="right",
                 showgrid=False,
-                color="#7FDBFF",
+                color="#00CC96",
             ),
             legend=dict(
                 orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1

@@ -75,7 +75,7 @@ app.layout = html.Div(
             },
             children=[
                 html.H1(
-                    children="Store Analysis Dashboard",
+                    children="MLX Enterprise Analysis Dashboard",
                     style={
                         "textAlign": "center",
                         "color": "#7FDBFF",
