@@ -29,6 +29,7 @@ CATEGORY_COLORS = {
 layout = html.Div(
     [
         dcc.Graph(id="store-revenue-bar-chart"),
+        dcc.Graph(id="store-revenue-per-piece-chart"),
         html.Div(
             [
                 html.Div(
@@ -91,6 +92,7 @@ layout = html.Div(
 @callback(
     [
         Output("store-revenue-bar-chart", "figure"),
+        Output("store-revenue-per-piece-chart", "figure"),
         Output("store-order-trends-chart", "figure"),
         Output("store-category-trends-chart", "figure"),
         Output("store-new-customer-trend", "figure"),
@@ -166,11 +168,43 @@ def update_store(
                 orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1
             ),
         )
+
+        df_ratio = (
+            df_revenue.groupby("month_year")[["total_revenue", "total_pieces"]]
+            .sum()
+            .reset_index()
+        )
+        df_ratio["revenue_per_piece"] = (
+            df_ratio["total_revenue"] / df_ratio["total_pieces"]
+        )
+
+        fig_ratio = px.line(
+            df_ratio,
+            x="month_year",
+            y="revenue_per_piece",
+            title="Revenue per Piece Over Time",
+            labels={
+                "month_year": "Month (YYYY-MM)",
+                "revenue_per_piece": "Revenue per Piece ($)",
+            },
+            template="plotly_dark",
+            markers=True,
+        )
+        fig_ratio.update_traces(line=dict(color="#00CC96", width=3))
+        fig_ratio.update_layout(
+            plot_bgcolor="#111111", paper_bgcolor="#111111", font_color="#7FDBFF"
+        )
     else:
         fig = px.scatter(
             title="No data available for the selected criteria.", template="plotly_dark"
         )
         fig.update_layout(
+            plot_bgcolor="#111111", paper_bgcolor="#111111", font_color="#7FDBFF"
+        )
+        fig_ratio = px.scatter(
+            title="No data available for the selected criteria.", template="plotly_dark"
+        )
+        fig_ratio.update_layout(
             plot_bgcolor="#111111", paper_bgcolor="#111111", font_color="#7FDBFF"
         )
 
@@ -355,4 +389,4 @@ def update_store(
             plot_bgcolor="#111111", paper_bgcolor="#111111", font_color="#7FDBFF"
         )
 
-    return fig, fig_trends, fig_cat, fig_new, fig_lapsed
+    return fig, fig_ratio, fig_trends, fig_cat, fig_new, fig_lapsed
