@@ -448,7 +448,7 @@ def update_store(
                 range=[0, 100],
             ),
             legend=dict(
-                orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1
+                orientation="h", yanchor="top", y=-0.15, xanchor="center", x=0.5
             ),
         )
     else:
@@ -493,7 +493,7 @@ def update_store(
             paper_bgcolor="#111111",
             font_color="#7FDBFF",
             legend=dict(
-                orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1
+                orientation="h", yanchor="top", y=-0.15, xanchor="center", x=0.5
             ),
         )
     else:
