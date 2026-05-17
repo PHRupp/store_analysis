@@ -8,6 +8,7 @@ from database_utils import (
     fetch_top_customers,
     fetch_overdue_customers,
     fetch_customer_intervals,
+    fetch_customer_ltv,
 )
 
 dash.register_page(__name__, path="/customers", name="Customer Analysis", order=3)
@@ -46,8 +47,15 @@ def update_customers(selected_store, account_filter, start_date, end_date):
     df_intervals = fetch_customer_intervals(
         selected_store, account_filter, start_date, end_date
     )
+    df_ltv = fetch_customer_ltv(selected_store, account_filter, start_date, end_date)
 
-    if df_cust.empty and df_top.empty and df_overdue.empty and df_intervals.empty:
+    if (
+        df_cust.empty
+        and df_top.empty
+        and df_overdue.empty
+        and df_intervals.empty
+        and df_ltv.empty
+    ):
         return html.Div(
             "No customer data available.",
             style={"color": "#7FDBFF", "textAlign": "center"},
@@ -203,6 +211,35 @@ def update_customers(selected_store, account_filter, start_date, end_date):
             plot_bgcolor="#111111", paper_bgcolor="#111111", font_color="#7FDBFF"
         )
 
+    if not df_ltv.empty:
+        fig_ltv = px.histogram(
+            df_ltv,
+            x="total_spend",
+            color="customer_category",
+            title="Customer Lifetime Value Distribution",
+            labels={
+                "total_spend": "Lifetime Value ($)",
+                "customer_category": "Category",
+            },
+            category_orders={"customer_category": CATEGORY_ORDER},
+            color_discrete_map=CATEGORY_COLORS,
+            template="plotly_dark",
+            nbins=50,
+        )
+        fig_ltv.update_layout(
+            plot_bgcolor="#111111",
+            paper_bgcolor="#111111",
+            font_color="#7FDBFF",
+            bargap=0.1,
+        )
+    else:
+        fig_ltv = px.scatter(
+            title="No lifetime value data available.", template="plotly_dark"
+        )
+        fig_ltv.update_layout(
+            plot_bgcolor="#111111", paper_bgcolor="#111111", font_color="#7FDBFF"
+        )
+
     for fig in [fig_count, fig_spend, fig_top]:
         fig.update_layout(
             plot_bgcolor="#111111", paper_bgcolor="#111111", font_color="#7FDBFF"
@@ -223,7 +260,19 @@ def update_customers(selected_store, account_filter, start_date, end_date):
                 ],
                 style={"display": "flex"},
             ),
-            html.Div([dcc.Graph(id="cust-top-bar-line", figure=fig_top)]),
+            html.Div(
+                [
+                    html.Div(
+                        [dcc.Graph(id="cust-top-bar-line", figure=fig_top)],
+                        style={"width": "50%"},
+                    ),
+                    html.Div(
+                        [dcc.Graph(id="cust-ltv-histogram", figure=fig_ltv)],
+                        style={"width": "50%"},
+                    ),
+                ],
+                style={"display": "flex"},
+            ),
             html.Div(
                 [
                     html.Div(

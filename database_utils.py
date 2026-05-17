@@ -767,3 +767,47 @@ def fetch_customer_intervals(
         return pd.DataFrame(
             columns=["median_days_between_orders", "customer_category", "order_count"]
         )
+
+
+def fetch_customer_ltv(
+    store_name=None, account_filter="All", start_date=None, end_date=None
+):
+    """
+    Retrieves the total spend for each customer for histogram analysis.
+    """
+    if not os.path.exists(DB_PATH):
+        return pd.DataFrame(columns=["total_spend", "customer_category"])
+
+    query = 'SELECT total_spend, "Customer Category" AS customer_category FROM customer_summary'
+    conditions = ["total_spend IS NOT NULL"]
+    params = []
+
+    if store_name and store_name != "All":
+        conditions.append('"Store Name" = ?')
+        params.append(store_name)
+    if account_filter != "All":
+        conditions.append("account_type = ?")
+        params.append(account_filter)
+    if start_date:
+        conditions.append("first_order_date >= ?")
+        params.append(start_date)
+    if end_date:
+        conditions.append("first_order_date <= ?")
+        params.append(end_date)
+
+    if conditions:
+        query += " WHERE " + " AND ".join(conditions)
+
+    try:
+        logger.debug(f"Executing query: {query} with params: {params}")
+        start_time = time.perf_counter()
+        with sqlite3.connect(DB_PATH) as conn:
+            df = pd.read_sql_query(query, conn, params=params)
+        end_time = time.perf_counter()
+        logger.debug(
+            f"Query completed in {end_time - start_time:.4f} seconds. {len(df)} records returned."
+        )
+        return df
+    except Exception as e:
+        logger.error(f"Error fetching customer ltv: {e}")
+        return pd.DataFrame(columns=["total_spend", "customer_category"])
