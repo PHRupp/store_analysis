@@ -212,8 +212,12 @@ def update_customers(selected_store, account_filter, start_date, end_date):
         )
 
     if not df_ltv.empty:
+        df_ltv_hist = df_ltv.copy()
+        df_ltv_hist["total_spend"] = df_ltv_hist["total_spend"].clip(
+            lower=0, upper=2000
+        )
         fig_ltv = px.histogram(
-            df_ltv,
+            df_ltv_hist,
             x="total_spend",
             color="customer_category",
             title="Customer Lifetime Value Distribution",
@@ -224,13 +228,18 @@ def update_customers(selected_store, account_filter, start_date, end_date):
             category_orders={"customer_category": CATEGORY_ORDER},
             color_discrete_map=CATEGORY_COLORS,
             template="plotly_dark",
-            nbins=50,
+            nbins=40,
         )
         fig_ltv.update_layout(
             plot_bgcolor="#111111",
             paper_bgcolor="#111111",
             font_color="#7FDBFF",
             bargap=0.1,
+            xaxis=dict(
+                tickmode="array",
+                tickvals=[0, 500, 1000, 1500, 2000],
+                ticktext=["$0", "$500", "$1,000", "$1,500", "$2,000+"],
+            ),
         )
     else:
         fig_ltv = px.scatter(
