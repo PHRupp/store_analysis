@@ -7,8 +7,6 @@ from database_utils import (
     fetch_customer_stats,
     fetch_top_customers,
     fetch_overdue_customers,
-    fetch_new_customers_trend,
-    fetch_last_order_trend,
     fetch_customer_intervals,
 )
 
@@ -45,24 +43,11 @@ def update_customers(selected_store, account_filter, start_date, end_date):
     df_overdue = fetch_overdue_customers(
         selected_store, account_filter, start_date=start_date, end_date=end_date
     )
-    df_new = fetch_new_customers_trend(
-        selected_store, account_filter, start_date, end_date
-    )
-    df_returning = fetch_last_order_trend(
-        selected_store, account_filter, start_date, end_date
-    )
     df_intervals = fetch_customer_intervals(
         selected_store, account_filter, start_date, end_date
     )
 
-    if (
-        df_cust.empty
-        and df_top.empty
-        and df_overdue.empty
-        and df_new.empty
-        and df_returning.empty
-        and df_intervals.empty
-    ):
+    if df_cust.empty and df_top.empty and df_overdue.empty and df_intervals.empty:
         return html.Div(
             "No customer data available.",
             style={"color": "#7FDBFF", "textAlign": "center"},
@@ -169,82 +154,6 @@ def update_customers(selected_store, account_filter, start_date, end_date):
         plot_bgcolor="#111111", paper_bgcolor="#111111", font_color="#7FDBFF"
     )
 
-    if not df_new.empty:
-        fig_new = px.bar(
-            df_new,
-            x="month_year",
-            y="new_customer_count",
-            color="customer_category",
-            title="New Customer Acquisition Trend",
-            labels={
-                "month_year": "Month",
-                "new_customer_count": "New Customers",
-                "customer_category": "Category",
-            },
-            category_orders={"customer_category": CATEGORY_ORDER},
-            color_discrete_map=CATEGORY_COLORS,
-            template="plotly_dark",
-        )
-        fig_new.update_layout(
-            plot_bgcolor="#111111",
-            paper_bgcolor="#111111",
-            font_color="#7FDBFF",
-            legend=dict(
-                orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1
-            ),
-        )
-    else:
-        fig_new = px.scatter(
-            title="No acquisition data available.", template="plotly_dark"
-        )
-        fig_new.update_layout(
-            plot_bgcolor="#111111", paper_bgcolor="#111111", font_color="#7FDBFF"
-        )
-
-    if not df_returning.empty:
-        avg_returning = (
-            df_returning.groupby("month_year")["last_order_count"].sum().mean()
-        )
-        fig_returning = px.bar(
-            df_returning,
-            x="month_year",
-            y="last_order_count",
-            color="customer_category",
-            title="Last Order Activity Trend",
-            labels={
-                "month_year": "Month",
-                "last_order_count": "Customers",
-                "customer_category": "Category",
-            },
-            category_orders={"customer_category": CATEGORY_ORDER},
-            color_discrete_map=CATEGORY_COLORS,
-            template="plotly_dark",
-        )
-        if not pd.isna(avg_returning):
-            fig_returning.add_hline(
-                y=avg_returning,
-                line_width=2,
-                line_dash="dash",
-                line_color="white",
-                annotation_text=f"Avg: {avg_returning:.1f}",
-                annotation_position="top right",
-            )
-        fig_returning.update_layout(
-            plot_bgcolor="#111111",
-            paper_bgcolor="#111111",
-            font_color="#7FDBFF",
-            legend=dict(
-                orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1
-            ),
-        )
-    else:
-        fig_returning = px.scatter(
-            title="No activity data available.", template="plotly_dark"
-        )
-        fig_returning.update_layout(
-            plot_bgcolor="#111111", paper_bgcolor="#111111", font_color="#7FDBFF"
-        )
-
     if not df_intervals.empty:
         df_hist_data = df_intervals.copy()
         df_hist_data["median_days_between_orders"] = df_hist_data[
@@ -314,10 +223,11 @@ def update_customers(selected_store, account_filter, start_date, end_date):
                 ],
                 style={"display": "flex"},
             ),
+            html.Div([dcc.Graph(id="cust-top-bar-line", figure=fig_top)]),
             html.Div(
                 [
                     html.Div(
-                        [dcc.Graph(id="cust-top-bar-line", figure=fig_top)],
+                        [dcc.Graph(id="cust-interval-histogram", figure=fig_intervals)],
                         style={"width": "50%"},
                     ),
                     html.Div(
@@ -327,19 +237,5 @@ def update_customers(selected_store, account_filter, start_date, end_date):
                 ],
                 style={"display": "flex"},
             ),
-            html.Div(
-                [
-                    html.Div(
-                        [dcc.Graph(id="cust-new-trend", figure=fig_new)],
-                        style={"width": "50%"},
-                    ),
-                    html.Div(
-                        [dcc.Graph(id="cust-last-order-trend", figure=fig_returning)],
-                        style={"width": "50%"},
-                    ),
-                ],
-                style={"display": "flex"},
-            ),
-            html.Div([dcc.Graph(id="cust-interval-histogram", figure=fig_intervals)]),
         ]
     )
