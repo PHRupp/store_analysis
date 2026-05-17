@@ -213,9 +213,8 @@ def update_customers(selected_store, account_filter, start_date, end_date):
 
     if not df_ltv.empty:
         df_ltv_hist = df_ltv.copy()
-        df_ltv_hist["total_spend"] = df_ltv_hist["total_spend"].clip(
-            lower=0, upper=2000
-        )
+        median_ltv = df_ltv_hist["total_spend"].median()
+        df_ltv_hist["total_spend"] = df_ltv_hist["total_spend"].clip(lower=0, upper=500)
         fig_ltv = px.histogram(
             df_ltv_hist,
             x="total_spend",
@@ -230,6 +229,15 @@ def update_customers(selected_store, account_filter, start_date, end_date):
             template="plotly_dark",
             nbins=40,
         )
+        if not pd.isna(median_ltv):
+            fig_ltv.add_vline(
+                x=median_ltv,
+                line_width=2,
+                line_dash="dash",
+                line_color="white",
+                annotation_text=f"Median: ${median_ltv:.2f}",
+                annotation_position="top right",
+            )
         fig_ltv.update_layout(
             plot_bgcolor="#111111",
             paper_bgcolor="#111111",
@@ -237,8 +245,8 @@ def update_customers(selected_store, account_filter, start_date, end_date):
             bargap=0.1,
             xaxis=dict(
                 tickmode="array",
-                tickvals=[0, 500, 1000, 1500, 2000],
-                ticktext=["$0", "$500", "$1,000", "$1,500", "$2,000+"],
+                tickvals=[0, 250, 500, 750, 1000],
+                ticktext=["$0", "$250", "$500", "$750", "$1,000+"],
             ),
         )
     else:
