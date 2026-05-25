@@ -1,5 +1,6 @@
 import dash
 from dash import dcc, html, Input, Output, callback
+import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 from database_utils import (
@@ -31,6 +32,19 @@ layout = html.Div(
         html.Div(
             [
                 html.Div(
+                    dcc.Graph(id="store-revenue-per-piece-chart"),
+                    style={"width": "50%"},
+                ),
+                html.Div(
+                    dcc.Graph(id="store-pieces-per-order-chart"),
+                    style={"width": "50%"},
+                ),
+            ],
+            style={"display": "flex"},
+        ),
+        html.Div(
+            [
+                html.Div(
                     dcc.Graph(id="store-order-trends-chart"),
                     style={"width": "50%"},
                 ),
@@ -53,7 +67,7 @@ layout = html.Div(
                             [
                                 html.Label(
                                     "Minimum Lapsed Days:",
-                                    style={"color": "#7FDBFF", "marginRight": "10px"},
+                                    style={"color": "#7FDBFF", "marginRight": "15px"},
                                 ),
                                 dcc.Input(
                                     id="lapsed-days-input",
@@ -90,6 +104,8 @@ layout = html.Div(
 @callback(
     [
         Output("store-revenue-bar-chart", "figure"),
+        Output("store-revenue-per-piece-chart", "figure"),
+        Output("store-pieces-per-order-chart", "figure"),
         Output("store-order-trends-chart", "figure"),
         Output("store-category-trends-chart", "figure"),
         Output("store-new-customer-trend", "figure"),
@@ -165,6 +181,109 @@ def update_store(
                 orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1
             ),
         )
+
+        df_ratio = (
+            df_revenue.groupby("month_year")[["total_revenue", "total_pieces"]]
+            .sum()
+            .reset_index()
+        )
+        df_ratio["revenue_per_piece"] = (
+            df_ratio["total_revenue"] / df_ratio["total_pieces"]
+        )
+
+        fig_ratio = go.Figure()
+        fig_ratio.add_trace(
+            go.Bar(
+                x=df_ratio["month_year"],
+                y=df_ratio["total_pieces"],
+                name="Total Pieces",
+                marker_color="#FF851B",
+            )
+        )
+        fig_ratio.add_trace(
+            go.Scatter(
+                x=df_ratio["month_year"],
+                y=df_ratio["revenue_per_piece"],
+                name="Revenue per Piece",
+                mode="lines+markers",
+                line=dict(color="#00CC96", width=3),
+                yaxis="y2",
+            )
+        )
+        fig_ratio.update_layout(
+            title="Revenue per Piece Over Time",
+            template="plotly_dark",
+            plot_bgcolor="#111111",
+            paper_bgcolor="#111111",
+            font_color="#7FDBFF",
+            yaxis=dict(title="Total Pieces"),
+            yaxis2=dict(
+                title="Revenue per Piece ($)",
+                overlaying="y",
+                side="right",
+                showgrid=False,
+                color="#00CC96",
+                rangemode="tozero",
+            ),
+            legend=dict(
+                orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1
+            ),
+        )
+
+        if not df_trends.empty:
+            df_pieces_ratio = pd.merge(
+                df_ratio, df_trends, on="month_year", how="inner"
+            )
+            df_pieces_ratio["pieces_per_order"] = (
+                df_pieces_ratio["total_pieces"] / df_pieces_ratio["order_count"]
+            )
+
+            fig_pieces = go.Figure()
+            fig_pieces.add_trace(
+                go.Bar(
+                    x=df_pieces_ratio["month_year"],
+                    y=df_pieces_ratio["order_count"],
+                    name="Order Count",
+                    marker_color="purple",
+                )
+            )
+            fig_pieces.add_trace(
+                go.Scatter(
+                    x=df_pieces_ratio["month_year"],
+                    y=df_pieces_ratio["pieces_per_order"],
+                    name="Pieces per Order",
+                    mode="lines+markers",
+                    line=dict(color="#FF851B", width=3),
+                    yaxis="y2",
+                )
+            )
+            fig_pieces.update_layout(
+                title="Pieces per Order Over Time",
+                template="plotly_dark",
+                plot_bgcolor="#111111",
+                paper_bgcolor="#111111",
+                font_color="#7FDBFF",
+                yaxis=dict(title="Order Count"),
+                yaxis2=dict(
+                    title="Pieces per Order",
+                    overlaying="y",
+                    side="right",
+                    showgrid=False,
+                    color="#FF851B",
+                    rangemode="tozero",
+                ),
+                legend=dict(
+                    orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1
+                ),
+            )
+        else:
+            fig_pieces = px.scatter(
+                title="No order data available for pieces per order.",
+                template="plotly_dark",
+            )
+            fig_pieces.update_layout(
+                plot_bgcolor="#111111", paper_bgcolor="#111111", font_color="#7FDBFF"
+            )
     else:
         fig = px.scatter(
             title="No data available for the selected criteria.", template="plotly_dark"
@@ -172,9 +291,29 @@ def update_store(
         fig.update_layout(
             plot_bgcolor="#111111", paper_bgcolor="#111111", font_color="#7FDBFF"
         )
+        fig_ratio = px.scatter(
+            title="No data available for the selected criteria.", template="plotly_dark"
+        )
+        fig_ratio.update_layout(
+            plot_bgcolor="#111111", paper_bgcolor="#111111", font_color="#7FDBFF"
+        )
+        fig_pieces = px.scatter(
+            title="No data available for the selected criteria.", template="plotly_dark"
+        )
+        fig_pieces.update_layout(
+            plot_bgcolor="#111111", paper_bgcolor="#111111", font_color="#7FDBFF"
+        )
 
     if not df_trends.empty:
         fig_trends = go.Figure()
+        fig_trends.add_trace(
+            go.Bar(
+                x=df_trends["month_year"],
+                y=df_trends["order_count"],
+                name="Order Count",
+                marker_color="purple",
+            )
+        )
         fig_trends.add_trace(
             go.Scatter(
                 x=df_trends["month_year"],
@@ -182,15 +321,6 @@ def update_store(
                 name="Median Invoice",
                 mode="lines+markers",
                 line=dict(color="#00CC96", width=3),
-            )
-        )
-        fig_trends.add_trace(
-            go.Scatter(
-                x=df_trends["month_year"],
-                y=df_trends["order_count"],
-                name="Order Count",
-                mode="lines+markers",
-                line=dict(color="#7FDBFF", width=3),
                 yaxis="y2",
             )
         )
@@ -200,13 +330,14 @@ def update_store(
             plot_bgcolor="#111111",
             paper_bgcolor="#111111",
             font_color="#7FDBFF",
-            yaxis=dict(title="Median Invoice ($)"),
+            yaxis=dict(title="Order Count"),
             yaxis2=dict(
-                title="Order Count",
+                title="Median Invoice ($)",
                 overlaying="y",
                 side="right",
                 showgrid=False,
-                color="#7FDBFF",
+                color="#00CC96",
+                rangemode="tozero",
             ),
             legend=dict(
                 orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1
@@ -268,15 +399,32 @@ def update_store(
         df_new_agg["returning_percentage"] = df_new_agg["returning_percentage"].fillna(
             0
         )
+        avg_new = df_new_agg["new_customer_count"].mean()
 
         fig_new = px.bar(
-            df_new_agg,
+            df_new,
             x="month_year",
             y="new_customer_count",
+            color="customer_category",
             title="New Customer Acquisition Trend",
-            labels={"month_year": "Month", "new_customer_count": "New Customers"},
+            labels={
+                "month_year": "Month",
+                "new_customer_count": "New Customers",
+                "customer_category": "Category",
+            },
+            category_orders={"customer_category": CATEGORY_ORDER},
+            color_discrete_map=CATEGORY_COLORS,
             template="plotly_dark",
         )
+        if not pd.isna(avg_new):
+            fig_new.add_hline(
+                y=avg_new,
+                line_width=2,
+                line_dash="dash",
+                line_color="white",
+                annotation_text=f"Avg: {avg_new:.1f}",
+                annotation_position="top left",
+            )
         fig_new.add_trace(
             go.Scatter(
                 x=df_new_agg["month_year"],
@@ -300,7 +448,7 @@ def update_store(
                 range=[0, 100],
             ),
             legend=dict(
-                orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1
+                orientation="h", yanchor="top", y=-0.15, xanchor="center", x=0.5
             ),
         )
     else:
@@ -315,16 +463,38 @@ def update_store(
         df_lapsed_agg = (
             df_lapsed.groupby("month_year")["last_order_count"].sum().reset_index()
         )
+        avg_lapsed = df_lapsed_agg["last_order_count"].mean()
         fig_lapsed = px.bar(
-            df_lapsed_agg,
+            df_lapsed,
             x="month_year",
             y="last_order_count",
+            color="customer_category",
             title="Lapsed Customers by Last Order Month",
-            labels={"month_year": "Month", "last_order_count": "Lapsed Customers"},
+            labels={
+                "month_year": "Month",
+                "last_order_count": "Lapsed Customers",
+                "customer_category": "Category",
+            },
+            category_orders={"customer_category": CATEGORY_ORDER},
+            color_discrete_map=CATEGORY_COLORS,
             template="plotly_dark",
         )
+        if not pd.isna(avg_lapsed):
+            fig_lapsed.add_hline(
+                y=avg_lapsed,
+                line_width=2,
+                line_dash="dash",
+                line_color="white",
+                annotation_text=f"Avg: {avg_lapsed:.1f}",
+                annotation_position="top right",
+            )
         fig_lapsed.update_layout(
-            plot_bgcolor="#111111", paper_bgcolor="#111111", font_color="#7FDBFF"
+            plot_bgcolor="#111111",
+            paper_bgcolor="#111111",
+            font_color="#7FDBFF",
+            legend=dict(
+                orientation="h", yanchor="top", y=-0.15, xanchor="center", x=0.5
+            ),
         )
     else:
         fig_lapsed = px.scatter(
@@ -334,4 +504,4 @@ def update_store(
             plot_bgcolor="#111111", paper_bgcolor="#111111", font_color="#7FDBFF"
         )
 
-    return fig, fig_trends, fig_cat, fig_new, fig_lapsed
+    return fig, fig_ratio, fig_pieces, fig_trends, fig_cat, fig_new, fig_lapsed
