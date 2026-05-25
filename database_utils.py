@@ -813,8 +813,35 @@ def fetch_customer_ltv(
         return pd.DataFrame(columns=["total_spend", "customer_category"])
 
 
+def fetch_unique_items():
+    """
+    Retrieves unique Item names from the items table that have at least 5 total pieces ordered, sorted alphabetically.
+    """
+    if not os.path.exists(DB_PATH):
+        return []
+
+    query = 'SELECT "Item" FROM items WHERE "Item" IS NOT NULL GROUP BY "Item" HAVING SUM("Total Pcs") >= 10 ORDER BY "Item"'
+    try:
+        logger.debug(f"Executing query: {query}")
+        start_time = time.perf_counter()
+        with sqlite3.connect(DB_PATH) as conn:
+            df = pd.read_sql_query(query, conn)
+        end_time = time.perf_counter()
+        logger.debug(
+            f"Query completed in {end_time - start_time:.4f} seconds. {len(df)} records returned."
+        )
+        return df["Item"].tolist()
+    except Exception as e:
+        logger.error(f"Error fetching unique items: {e}")
+        return []
+
+
 def fetch_item_pieces_by_week(
-    store_name=None, start_date=None, end_date=None, account_filter="All"
+    store_name=None,
+    start_date=None,
+    end_date=None,
+    account_filter="All",
+    selected_items=None,
 ):
     """
     Retrieves the total pieces over time, aggregated by week.
@@ -849,6 +876,10 @@ def fetch_item_pieces_by_week(
     if account_filter != "All":
         query += """ AND (CASE WHEN c."Business ID" IS NULL OR c."Business ID" = '' THEN 'Retail' ELSE 'Commercial' END) = ?"""
         params.append(account_filter)
+    if selected_items:
+        placeholders = ",".join(["?"] * len(selected_items))
+        query += f' AND i."Item" IN ({placeholders})'
+        params.extend(selected_items)
 
     query += " GROUP BY placed_date, account_type"
 

@@ -1,11 +1,36 @@
 import dash
 from dash import dcc, html, Input, Output, callback
 import plotly.express as px
-from database_utils import fetch_item_pieces_by_week
+from database_utils import fetch_item_pieces_by_week, fetch_unique_items
 
 dash.register_page(__name__, path="/items", name="Items Analysis", order=5)
 
-layout = html.Div([html.Div(id="items-content")])
+layout = html.Div(
+    [
+        html.Div(
+            [
+                html.Div(
+                    [
+                        html.Label("Select Items:", style={"color": "#7FDBFF"}),
+                        dcc.Dropdown(
+                            id="item-selection-dropdown",
+                            options=[
+                                {"label": item, "value": item}
+                                for item in fetch_unique_items()
+                            ],
+                            multi=True,
+                            placeholder="All Items (Select to filter)",
+                            style={"color": "#111111", "marginTop": "10px"},
+                        ),
+                    ],
+                    style={"width": "20%", "paddingRight": "20px"},
+                ),
+                html.Div(id="items-content", style={"width": "80%"}),
+            ],
+            style={"display": "flex", "marginTop": "20px"},
+        )
+    ]
+)
 
 
 @callback(
@@ -15,11 +40,14 @@ layout = html.Div([html.Div(id="items-content")])
         Input("date-range-picker", "start_date"),
         Input("date-range-picker", "end_date"),
         Input("account-type-dropdown", "value"),
+        Input("item-selection-dropdown", "value"),
     ],
 )
-def update_items(selected_store_name, start_date, end_date, account_filter):
+def update_items(
+    selected_store_name, start_date, end_date, account_filter, selected_items
+):
     df_pieces = fetch_item_pieces_by_week(
-        selected_store_name, start_date, end_date, account_filter
+        selected_store_name, start_date, end_date, account_filter, selected_items
     )
 
     if not df_pieces.empty:
