@@ -820,7 +820,19 @@ def fetch_unique_items():
     if not os.path.exists(DB_PATH):
         return []
 
-    query = 'SELECT "Item" FROM items WHERE "Item" IS NOT NULL GROUP BY "Item" HAVING SUM("Total Pcs") >= 10 ORDER BY "Item"'
+    # Rushes don't count as item count / pieces, but we treat them as 1s here
+    # so that they show up in the plots. If they are zero, then they dont display
+    query = """
+    SELECT 
+        "Item" 
+    FROM 
+        items 
+    WHERE 
+        "Item" IS NOT NULL 
+    GROUP BY "Item" 
+    HAVING SUM(CASE WHEN LOWER("Item") LIKE '%rush%' THEN 1 ELSE "Total Pcs" END) >= 10 
+    ORDER BY "Item"
+    """
     try:
         logger.debug(f"Executing query: {query}")
         start_time = time.perf_counter()
@@ -849,6 +861,8 @@ def fetch_item_pieces_by_week(
     if not os.path.exists(DB_PATH):
         return pd.DataFrame(columns=["week", "total_pieces", "account_type"])
 
+    # Rushes don't count as item count / pieces, but we treat them as 1s here
+    # so that they show up in the plots. If they are zero, then they dont display
     query = """
     SELECT 
         date(i."Placed") as placed_date,
@@ -856,7 +870,9 @@ def fetch_item_pieces_by_week(
             WHEN c."Business ID" IS NULL OR c."Business ID" = '' THEN 'Retail' 
             ELSE 'Commercial' 
         END as account_type,
-        SUM(i."Total Pcs") as total_pieces
+        SUM(
+            CASE WHEN LOWER(i."Item") LIKE '%rush%' THEN 1 ELSE i."Total Pcs" END
+        ) as total_pieces
     FROM items i
     JOIN orders o ON i."Order ID" = o."Order ID" AND i."Store ID" = o."Store ID"
     JOIN customers c ON i."Customer ID" = c."Customer ID" AND i."Store ID" = c."Store ID"
