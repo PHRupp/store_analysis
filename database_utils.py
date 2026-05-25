@@ -811,3 +811,71 @@ def fetch_customer_ltv(
     except Exception as e:
         logger.error(f"Error fetching customer ltv: {e}")
         return pd.DataFrame(columns=["total_spend", "customer_category"])
+
+
+def fetch_item_pieces_by_week(
+    store_name=None, start_date=None, end_date=None, account_filter="All"
+):
+    """
+    Retrieves the total pieces over time, aggregated by week.
+    """
+    if not os.path.exists(DB_PATH):
+        return pd.DataFrame(columns=["week", "total_pieces", "account_type"])
+
+    query = """
+    SELECT 
+        date(i."Placed") as placed_date,
+        CASE 
+            WHEN c."Business ID" IS NULL OR c."Business ID" = '' THEN 'Retail' 
+            ELSE 'Commercial' 
+        END as account_type,
+        SUM(i."Total Pcs") as total_pieces
+    FROM items i
+    JOIN orders o ON i."Order ID" = o."Order ID" AND i."Store ID" = o."Store ID"
+    JOIN customers c ON i."Customer ID" = c."Customer ID" AND i."Store ID" = c."Store ID"
+    WHERE i."Placed" IS NOT NULL
+    """
+    params = []
+
+    if store_name and store_name != "All":
+        query += ' AND o."Store Name" = ?'
+        params.append(store_name)
+    if start_date:
+        query += ' AND i."Placed" >= ?'
+        params.append(start_date)
+    if end_date:
+        query += ' AND i."Placed" <= ?'
+        params.append(end_date)
+    if account_filter != "All":
+        query += """ AND (CASE WHEN c."Business ID" IS NULL OR c."Business ID" = '' THEN 'Retail' ELSE 'Commercial' END) = ?"""
+        params.append(account_filter)
+
+    query += " GROUP BY placed_date, account_type"
+
+    try:
+        logger.debug(f"Executing query: {query} with params: {params}")
+        start_time = time.perf_counter()
+        with sqlite3.connect(DB_PATH) as conn:
+            df = pd.read_sql_query(query, conn, params=params)
+        end_time = time.perf_counter()
+        logger.debug(
+            f"Query completed in {end_time - start_time:.4f} seconds. {len(df)} records returned."
+        )
+
+        if not df.empty:
+            df["placed_date"] = pd.to_datetime(df["placed_date"])
+            df = (
+                df.groupby(
+                    [pd.Grouper(key="placed_date", freq="W-MON"), "account_type"]
+                )["total_pieces"]
+                .sum()
+                .reset_index()
+            )
+            df.rename(columns={"placed_date": "week"}, inplace=True)
+            df["week"] = df["week"].dt.strftime("%Y-%m-%d")
+            df.sort_values(["week", "account_type"], inplace=True)
+
+        return df
+    except Exception as e:
+        logger.error(f"Error fetching item pieces by week: {e}")
+        return pd.DataFrame(columns=["week", "total_pieces", "account_type"])
