@@ -23,6 +23,30 @@ DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), DB_NAME)
 logger = logging.getLogger(__name__)
 
 
+def execute_query(stmt, is_scalar=False):
+    """
+    Executes an SQLAlchemy statement, handles logging, and returns the result.
+    """
+    logger.debug(f"Executing query: {stmt}")
+    start_time = time.perf_counter()
+    engine = sa.create_engine(f"sqlite:///{DB_PATH}")
+    with engine.connect() as conn:
+        if is_scalar:
+            result = conn.execute(stmt).scalar()
+            end_time = time.perf_counter()
+            logger.debug(
+                f"Query completed in {end_time - start_time:.4f} seconds. Result: {result}"
+            )
+            return result
+        else:
+            df = pd.read_sql_query(stmt, conn)
+            end_time = time.perf_counter()
+            logger.debug(
+                f"Query completed in {end_time - start_time:.4f} seconds. {len(df)} records returned."
+            )
+            return df
+
+
 def fetch_store_names():
     """
     Retrieves unique Store Names from the store_lookup view.
@@ -32,15 +56,7 @@ def fetch_store_names():
     store_lookup = table("store_lookup", column("Store Name"))
     stmt = select(store_lookup.c["Store Name"]).order_by(store_lookup.c["Store Name"])
     try:
-        logger.debug(f"Executing query: {stmt}")
-        start_time = time.perf_counter()
-        engine = sa.create_engine(f"sqlite:///{DB_PATH}")
-        with engine.connect() as conn:
-            df = pd.read_sql_query(stmt, conn)
-        end_time = time.perf_counter()
-        logger.debug(
-            f"Query completed in {end_time - start_time:.4f} seconds. {len(df)} records returned."
-        )
+        df = execute_query(stmt)
         return df["Store Name"].tolist()
     except Exception as e:
         logger.error(f"Error fetching store names: {e}")
@@ -89,16 +105,7 @@ def fetch_customer_stats(
     stmt = stmt.group_by(customer_summary.c["Customer Category"])
 
     try:
-        logger.debug(f"Executing query: {stmt}")
-        start_time = time.perf_counter()
-        engine = sa.create_engine(f"sqlite:///{DB_PATH}")
-        with engine.connect() as conn:
-            df = pd.read_sql_query(stmt, conn)
-        end_time = time.perf_counter()
-        logger.debug(
-            f"Query completed in {end_time - start_time:.4f} seconds. {len(df)} records returned."
-        )
-        return df
+        return execute_query(stmt)
     except Exception as e:
         logger.error(f"Error fetching customer stats: {e}")
         return pd.DataFrame(
@@ -161,16 +168,7 @@ def fetch_top_customers(store_name=None, account_filter="All", limit=50):
     stmt = stmt.order_by(desc(customer_summary.c.total_spend)).limit(limit)
 
     try:
-        logger.debug(f"Executing query: {stmt}")
-        start_time = time.perf_counter()
-        engine = sa.create_engine(f"sqlite:///{DB_PATH}")
-        with engine.connect() as conn:
-            df = pd.read_sql_query(stmt, conn)
-        end_time = time.perf_counter()
-        logger.debug(
-            f"Query completed in {end_time - start_time:.4f} seconds. {len(df)} records returned."
-        )
-        return df
+        return execute_query(stmt)
     except Exception as e:
         logger.error(f"Error fetching top customers: {e}")
         return pd.DataFrame(
@@ -254,16 +252,7 @@ def fetch_overdue_customers(
     stmt = stmt.where(and_(*conditions)).order_by(desc(days_past_expected)).limit(limit)
 
     try:
-        logger.debug(f"Executing query: {stmt}")
-        start_time = time.perf_counter()
-        engine = sa.create_engine(f"sqlite:///{DB_PATH}")
-        with engine.connect() as conn:
-            df = pd.read_sql_query(stmt, conn)
-        end_time = time.perf_counter()
-        logger.debug(
-            f"Query completed in {end_time - start_time:.4f} seconds. {len(df)} records returned."
-        )
-        return df
+        return execute_query(stmt)
     except Exception as e:
         logger.error(f"Error fetching overdue customers: {e}")
         return pd.DataFrame(
@@ -336,16 +325,7 @@ def fetch_new_customers_trend(
     )
 
     try:
-        logger.debug(f"Executing query: {stmt}")
-        start_time = time.perf_counter()
-        engine = sa.create_engine(f"sqlite:///{DB_PATH}")
-        with engine.connect() as conn:
-            df = pd.read_sql_query(stmt, conn)
-        end_time = time.perf_counter()
-        logger.debug(
-            f"Query completed in {end_time - start_time:.4f} seconds. {len(df)} records returned."
-        )
-        return df
+        return execute_query(stmt)
     except Exception as e:
         logger.error(f"Error fetching new customer trends: {e}")
         return pd.DataFrame(
@@ -412,16 +392,7 @@ def fetch_last_order_trend(
     )
 
     try:
-        logger.debug(f"Executing query: {stmt}")
-        start_time = time.perf_counter()
-        engine = sa.create_engine(f"sqlite:///{DB_PATH}")
-        with engine.connect() as conn:
-            df = pd.read_sql_query(stmt, conn)
-        end_time = time.perf_counter()
-        logger.debug(
-            f"Query completed in {end_time - start_time:.4f} seconds. {len(df)} records returned."
-        )
-        return df
+        return execute_query(stmt)
     except Exception as e:
         logger.error(f"Error fetching last order trends: {e}")
         return pd.DataFrame(
@@ -493,16 +464,7 @@ def fetch_monthly_revenue(
     )
 
     try:
-        logger.debug(f"Executing query: {stmt}")
-        start_time = time.perf_counter()
-        engine = sa.create_engine(f"sqlite:///{DB_PATH}")
-        with engine.connect() as conn:
-            df = pd.read_sql_query(stmt, conn)
-        end_time = time.perf_counter()
-        logger.debug(
-            f"Query completed in {end_time - start_time:.4f} seconds. {len(df)} records returned."
-        )
-        return df
+        return execute_query(stmt)
     except Exception as e:
         logger.error(f"Error querying database: {e}")
         return pd.DataFrame(columns=["month_year", "total_revenue"])
@@ -587,16 +549,7 @@ def fetch_order_trends(
     )
 
     try:
-        logger.debug(f"Executing query: {stmt}")
-        start_time = time.perf_counter()
-        engine = sa.create_engine(f"sqlite:///{DB_PATH}")
-        with engine.connect() as conn:
-            df = pd.read_sql_query(stmt, conn)
-        end_time = time.perf_counter()
-        logger.debug(
-            f"Query completed in {end_time - start_time:.4f} seconds. {len(df)} records returned."
-        )
-        return df
+        return execute_query(stmt)
     except Exception as e:
         logger.error(f"Error fetching order trends: {e}")
         return pd.DataFrame(columns=["month_year", "median_invoice", "order_count"])
@@ -676,16 +629,7 @@ def fetch_category_order_trends(
     )
 
     try:
-        logger.debug(f"Executing query: {stmt}")
-        start_time = time.perf_counter()
-        engine = sa.create_engine(f"sqlite:///{DB_PATH}")
-        with engine.connect() as conn:
-            df = pd.read_sql_query(stmt, conn)
-        end_time = time.perf_counter()
-        logger.debug(
-            f"Query completed in {end_time - start_time:.4f} seconds. {len(df)} records returned."
-        )
-        return df
+        return execute_query(stmt)
     except Exception as e:
         logger.error(f"Error fetching category order trends: {e}")
         return pd.DataFrame(columns=["month_year", "customer_category", "order_count"])
@@ -758,16 +702,7 @@ def fetch_order_totals(
     stmt = stmt.where(and_(*conditions))
 
     try:
-        logger.debug(f"Executing query: {stmt}")
-        start_time = time.perf_counter()
-        engine = sa.create_engine(f"sqlite:///{DB_PATH}")
-        with engine.connect() as conn:
-            df = pd.read_sql_query(stmt, conn)
-        end_time = time.perf_counter()
-        logger.debug(
-            f"Query completed in {end_time - start_time:.4f} seconds. {len(df)} records returned."
-        )
-        return df
+        return execute_query(stmt)
     except Exception as e:
         logger.error(f"Error fetching order totals: {e}")
         return pd.DataFrame(columns=["Total", "customer_category"])
@@ -854,16 +789,7 @@ def fetch_daytime_data(
     )
 
     try:
-        logger.debug(f"Executing query: {stmt}")
-        start_time = time.perf_counter()
-        engine = sa.create_engine(f"sqlite:///{DB_PATH}")
-        with engine.connect() as conn:
-            df = pd.read_sql_query(stmt, conn)
-        end_time = time.perf_counter()
-        logger.debug(
-            f"Query completed in {end_time - start_time:.4f} seconds. {len(df)} records returned."
-        )
-        return df
+        return execute_query(stmt)
     except Exception as e:
         logger.error(f"Error fetching daytime data: {e}")
         return pd.DataFrame(columns=["placed_hour", "customer_category", "order_count"])
@@ -953,16 +879,7 @@ def fetch_collection_data(
     )
 
     try:
-        logger.debug(f"Executing query: {stmt}")
-        start_time = time.perf_counter()
-        engine = sa.create_engine(f"sqlite:///{DB_PATH}")
-        with engine.connect() as conn:
-            df = pd.read_sql_query(stmt, conn)
-        end_time = time.perf_counter()
-        logger.debug(
-            f"Query completed in {end_time - start_time:.4f} seconds. {len(df)} records returned."
-        )
-        return df
+        return execute_query(stmt)
     except Exception as e:
         logger.error(f"Error fetching collection data: {e}")
         return pd.DataFrame(
@@ -1012,16 +929,7 @@ def fetch_customer_intervals(
         stmt = stmt.where(and_(*conditions))
 
     try:
-        logger.debug(f"Executing query: {stmt}")
-        start_time = time.perf_counter()
-        engine = sa.create_engine(f"sqlite:///{DB_PATH}")
-        with engine.connect() as conn:
-            df = pd.read_sql_query(stmt, conn)
-        end_time = time.perf_counter()
-        logger.debug(
-            f"Query completed in {end_time - start_time:.4f} seconds. {len(df)} records returned."
-        )
-        return df
+        return execute_query(stmt)
     except Exception as e:
         logger.error(f"Error fetching customer intervals: {e}")
         return pd.DataFrame(
@@ -1067,16 +975,7 @@ def fetch_customer_ltv(
         stmt = stmt.where(and_(*conditions))
 
     try:
-        logger.debug(f"Executing query: {stmt}")
-        start_time = time.perf_counter()
-        engine = sa.create_engine(f"sqlite:///{DB_PATH}")
-        with engine.connect() as conn:
-            df = pd.read_sql_query(stmt, conn)
-        end_time = time.perf_counter()
-        logger.debug(
-            f"Query completed in {end_time - start_time:.4f} seconds. {len(df)} records returned."
-        )
-        return df
+        return execute_query(stmt)
     except Exception as e:
         logger.error(f"Error fetching customer ltv: {e}")
         return pd.DataFrame(columns=["total_spend", "customer_category"])
@@ -1108,15 +1007,7 @@ def fetch_unique_items():
     )
 
     try:
-        logger.debug(f"Executing query: {stmt}")
-        start_time = time.perf_counter()
-        engine = sa.create_engine(f"sqlite:///{DB_PATH}")
-        with engine.connect() as conn:
-            df = pd.read_sql_query(stmt, conn)
-        end_time = time.perf_counter()
-        logger.debug(
-            f"Query completed in {end_time - start_time:.4f} seconds. {len(df)} records returned."
-        )
+        df = execute_query(stmt)
         return df["Item"].tolist()
     except Exception as e:
         logger.error(f"Error fetching unique items: {e}")
@@ -1198,15 +1089,7 @@ def fetch_item_pieces_by_week(
     )
 
     try:
-        logger.debug(f"Executing query: {stmt}")
-        start_time = time.perf_counter()
-        engine = sa.create_engine(f"sqlite:///{DB_PATH}")
-        with engine.connect() as conn:
-            df = pd.read_sql_query(stmt, conn)
-        end_time = time.perf_counter()
-        logger.debug(
-            f"Query completed in {end_time - start_time:.4f} seconds. {len(df)} records returned."
-        )
+        df = execute_query(stmt)
 
         if not df.empty:
             df["placed_date"] = pd.to_datetime(df["placed_date"])
@@ -1281,16 +1164,7 @@ def fetch_total_order_count(
     stmt = stmt.where(and_(*conditions))
 
     try:
-        logger.debug(f"Executing query: {stmt}")
-        start_time = time.perf_counter()
-        engine = sa.create_engine(f"sqlite:///{DB_PATH}")
-        with engine.connect() as conn:
-            result = conn.execute(stmt).scalar()
-        end_time = time.perf_counter()
-        logger.debug(
-            f"Query completed in {end_time - start_time:.4f} seconds. Result: {result} orders."
-        )
-        return result
+        return execute_query(stmt, is_scalar=True)
     except Exception as e:
         logger.error(f"Error fetching total order count: {e}")
         return 0
@@ -1365,16 +1239,7 @@ def fetch_top_items(
     )
 
     try:
-        logger.debug(f"Executing query: {stmt}")
-        start_time = time.perf_counter()
-        engine = sa.create_engine(f"sqlite:///{DB_PATH}")
-        with engine.connect() as conn:
-            df = pd.read_sql_query(stmt, conn)
-        end_time = time.perf_counter()
-        logger.debug(
-            f"Query completed in {end_time - start_time:.4f} seconds. {len(df)} records returned."
-        )
-        return df
+        return execute_query(stmt)
     except Exception as e:
         logger.error(f"Error fetching top items: {e}")
         return pd.DataFrame(columns=["Item", "order_count"])
@@ -1466,16 +1331,7 @@ def fetch_top_item_pairs(
     )
 
     try:
-        logger.debug(f"Executing query: {stmt}")
-        start_time = time.perf_counter()
-        engine = sa.create_engine(f"sqlite:///{DB_PATH}")
-        with engine.connect() as conn:
-            df = pd.read_sql_query(stmt, conn)
-        end_time = time.perf_counter()
-        logger.debug(
-            f"Query completed in {end_time - start_time:.4f} seconds. {len(df)} records returned."
-        )
-        return df
+        return execute_query(stmt)
     except Exception as e:
         logger.error(f"Error fetching top item pairs: {e}")
         return pd.DataFrame(columns=["item_pair", "pair_count"])
