@@ -926,3 +926,106 @@ def fetch_item_pieces_by_week(
     except Exception as e:
         logger.error(f"Error fetching item pieces by week: {e}")
         return pd.DataFrame(columns=["week", "total_pieces", "account_type"])
+
+
+def fetch_top_items(
+    store_name=None, start_date=None, end_date=None, account_filter="All", limit=20
+):
+    """
+    Retrieves the most frequent items within orders for market basket analysis.
+    """
+    if not os.path.exists(DB_PATH):
+        return pd.DataFrame(columns=["Item", "order_count"])
+
+    query = """
+    SELECT 
+        i."Item",
+        COUNT(DISTINCT i."Order ID") as order_count
+    FROM items i
+    JOIN orders o ON i."Order ID" = o."Order ID" AND i."Store ID" = o."Store ID"
+    JOIN customers c ON i."Customer ID" = c."Customer ID" AND i."Store ID" = c."Store ID"
+    WHERE i."Placed" IS NOT NULL AND i."Item" IS NOT NULL
+    """
+    params = []
+
+    if store_name and store_name != "All":
+        query += ' AND o."Store Name" = ?'
+        params.append(store_name)
+    if start_date:
+        query += ' AND i."Placed" >= ?'
+        params.append(start_date)
+    if end_date:
+        query += ' AND i."Placed" <= ?'
+        params.append(end_date)
+    if account_filter != "All":
+        query += """ AND (CASE WHEN c."Business ID" IS NULL OR c."Business ID" = '' THEN 'Retail' ELSE 'Commercial' END) = ?"""
+        params.append(account_filter)
+
+    query += ' GROUP BY i."Item" ORDER BY order_count DESC LIMIT ?'
+    params.append(limit)
+
+    try:
+        logger.debug(f"Executing query: {query} with params: {params}")
+        start_time = time.perf_counter()
+        with sqlite3.connect(DB_PATH) as conn:
+            df = pd.read_sql_query(query, conn, params=params)
+        end_time = time.perf_counter()
+        logger.debug(
+            f"Query completed in {end_time - start_time:.4f} seconds. {len(df)} records returned."
+        )
+        return df
+    except Exception as e:
+        logger.error(f"Error fetching top items: {e}")
+        return pd.DataFrame(columns=["Item", "order_count"])
+
+
+def fetch_top_item_pairs(
+    store_name=None, start_date=None, end_date=None, account_filter="All", limit=20
+):
+    """
+    Retrieves the most frequent item pairs within orders for market basket analysis.
+    """
+    if not os.path.exists(DB_PATH):
+        return pd.DataFrame(columns=["item_pair", "pair_count"])
+
+    query = """
+    SELECT 
+        i1."Item" || ' + ' || i2."Item" as item_pair,
+        COUNT(DISTINCT i1."Order ID") as pair_count
+    FROM items i1
+    JOIN items i2 ON i1."Order ID" = i2."Order ID" AND i1."Store ID" = i2."Store ID" AND i1."Item" < i2."Item"
+    JOIN orders o ON i1."Order ID" = o."Order ID" AND i1."Store ID" = o."Store ID"
+    JOIN customers c ON i1."Customer ID" = c."Customer ID" AND i1."Store ID" = c."Store ID"
+    WHERE i1."Placed" IS NOT NULL AND i1."Item" IS NOT NULL AND i2."Item" IS NOT NULL
+    """
+    params = []
+
+    if store_name and store_name != "All":
+        query += ' AND o."Store Name" = ?'
+        params.append(store_name)
+    if start_date:
+        query += ' AND i1."Placed" >= ?'
+        params.append(start_date)
+    if end_date:
+        query += ' AND i1."Placed" <= ?'
+        params.append(end_date)
+    if account_filter != "All":
+        query += """ AND (CASE WHEN c."Business ID" IS NULL OR c."Business ID" = '' THEN 'Retail' ELSE 'Commercial' END) = ?"""
+        params.append(account_filter)
+
+    query += ' GROUP BY i1."Item", i2."Item" ORDER BY pair_count DESC LIMIT ?'
+    params.append(limit)
+
+    try:
+        logger.debug(f"Executing query: {query} with params: {params}")
+        start_time = time.perf_counter()
+        with sqlite3.connect(DB_PATH) as conn:
+            df = pd.read_sql_query(query, conn, params=params)
+        end_time = time.perf_counter()
+        logger.debug(
+            f"Query completed in {end_time - start_time:.4f} seconds. {len(df)} records returned."
+        )
+        return df
+    except Exception as e:
+        logger.error(f"Error fetching top item pairs: {e}")
+        return pd.DataFrame(columns=["item_pair", "pair_count"])

@@ -1,7 +1,12 @@
 import dash
 from dash import dcc, html, Input, Output, callback
 import plotly.express as px
-from database_utils import fetch_item_pieces_by_week, fetch_unique_items
+from database_utils import (
+    fetch_item_pieces_by_week,
+    fetch_unique_items,
+    fetch_top_items,
+    fetch_top_item_pairs,
+)
 
 dash.register_page(__name__, path="/items", name="Items Analysis", order=5)
 
@@ -50,6 +55,14 @@ def update_items(
         selected_store_name, start_date, end_date, account_filter, selected_items
     )
 
+    # Market basket analysis plots (unaffected by selected_items)
+    df_top_items = fetch_top_items(
+        selected_store_name, start_date, end_date, account_filter
+    )
+    df_top_pairs = fetch_top_item_pairs(
+        selected_store_name, start_date, end_date, account_filter
+    )
+
     if not df_pieces.empty:
         fig_pieces = px.line(
             df_pieces,
@@ -81,4 +94,75 @@ def update_items(
             plot_bgcolor="#111111", paper_bgcolor="#111111", font_color="#7FDBFF"
         )
 
-    return html.Div([dcc.Graph(id="items-pieces-line-chart", figure=fig_pieces)])
+    # Top Items Bar Chart
+    if not df_top_items.empty:
+        fig_top_items = px.bar(
+            df_top_items,
+            x="order_count",
+            y="Item",
+            orientation="h",
+            title="Top 20 Items by Order Frequency",
+            labels={"order_count": "Number of Orders", "Item": "Item"},
+            template="plotly_dark",
+        )
+        fig_top_items.update_layout(
+            yaxis={"categoryorder": "total ascending"},
+            plot_bgcolor="#111111",
+            paper_bgcolor="#111111",
+            font_color="#7FDBFF",
+        )
+    else:
+        fig_top_items = px.scatter(
+            title="No top items data available.", template="plotly_dark"
+        )
+        fig_top_items.update_layout(
+            plot_bgcolor="#111111", paper_bgcolor="#111111", font_color="#7FDBFF"
+        )
+
+    # Top Pairs Bar Chart
+    if not df_top_pairs.empty:
+        fig_top_pairs = px.bar(
+            df_top_pairs,
+            x="pair_count",
+            y="item_pair",
+            orientation="h",
+            title="Top 20 Item Pairs by Order Frequency",
+            labels={"pair_count": "Number of Orders", "item_pair": "Item Pair"},
+            template="plotly_dark",
+        )
+        fig_top_pairs.update_layout(
+            yaxis={"categoryorder": "total ascending"},
+            plot_bgcolor="#111111",
+            paper_bgcolor="#111111",
+            font_color="#7FDBFF",
+        )
+    else:
+        fig_top_pairs = px.scatter(
+            title="No top item pairs data available.", template="plotly_dark"
+        )
+        fig_top_pairs.update_layout(
+            plot_bgcolor="#111111", paper_bgcolor="#111111", font_color="#7FDBFF"
+        )
+
+    return html.Div(
+        [
+            dcc.Graph(id="items-pieces-line-chart", figure=fig_pieces),
+            html.Div(
+                [
+                    html.Div(
+                        [dcc.Graph(id="top-items-bar-chart", figure=fig_top_items)],
+                        style={"width": "50%", "display": "inline-block"},
+                    ),
+                    html.Div(
+                        [
+                            dcc.Graph(
+                                id="top-item-pairs-bar-chart", figure=fig_top_pairs
+                            )
+                        ],
+                        style={"width": "50%", "display": "inline-block"},
+                    ),
+                ],
+                style={"display": "flex", "marginTop": "20px"},
+            ),
+        ]
+    )
