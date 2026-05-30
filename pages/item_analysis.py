@@ -12,6 +12,7 @@ dash.register_page(__name__, path="/items", name="Items Analysis", order=5)
 
 layout = html.Div(
     [
+        html.Div(id="items-top-content", style={"marginTop": "20px"}),
         html.Div(
             [
                 html.Div(
@@ -30,11 +31,10 @@ layout = html.Div(
                     ],
                     style={"width": "20%", "paddingRight": "20px"},
                 ),
-                html.Div(id="items-top-content", style={"width": "80%"}),
+                html.Div(id="items-bottom-content", style={"width": "80%"}),
             ],
             style={"display": "flex", "marginTop": "20px"},
         ),
-        html.Div(id="items-bottom-content", style={"marginTop": "20px"}),
     ]
 )
 
@@ -148,7 +148,7 @@ def update_items(
             plot_bgcolor="#111111", paper_bgcolor="#111111", font_color="#7FDBFF"
         )
 
-    return dcc.Graph(id="items-pieces-line-chart", figure=fig_pieces), html.Div(
+    return html.Div(
         [
             html.Div(
                 [dcc.Graph(id="top-items-bar-chart", figure=fig_top_items)],
@@ -160,4 +160,4 @@ def update_items(
             ),
         ],
         style={"display": "flex"},
-    )
+    ), dcc.Graph(id="items-pieces-line-chart", figure=fig_pieces)
