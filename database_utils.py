@@ -928,6 +928,53 @@ def fetch_item_pieces_by_week(
         return pd.DataFrame(columns=["week", "total_pieces", "account_type"])
 
 
+def fetch_total_order_count(
+    store_name=None, start_date=None, end_date=None, account_filter="All"
+):
+    """
+    Retrieves the total number of orders matching the filters.
+    """
+    if not os.path.exists(DB_PATH):
+        return 0
+
+    query = """
+    SELECT COUNT(DISTINCT o."Order ID")
+    FROM orders o
+    JOIN customers c ON o."Customer ID" = c."Customer ID" AND o."Store ID" = c."Store ID"
+    WHERE o."Placed" IS NOT NULL
+    """
+    params = []
+
+    if store_name and store_name != "All":
+        query += ' AND o."Store Name" = ?'
+        params.append(store_name)
+    if start_date:
+        query += ' AND o."Placed" >= ?'
+        params.append(start_date)
+    if end_date:
+        query += ' AND o."Placed" <= ?'
+        params.append(end_date)
+    if account_filter != "All":
+        query += """ AND (CASE WHEN c."Business ID" IS NULL OR c."Business ID" = '' THEN 'Retail' ELSE 'Commercial' END) = ?"""
+        params.append(account_filter)
+
+    try:
+        logger.debug(f"Executing query: {query} with params: {params}")
+        start_time = time.perf_counter()
+        with sqlite3.connect(DB_PATH) as conn:
+            cursor = conn.cursor()
+            cursor.execute(query, params)
+            result = cursor.fetchone()[0]
+        end_time = time.perf_counter()
+        logger.debug(
+            f"Query completed in {end_time - start_time:.4f} seconds. Result: {result} orders."
+        )
+        return result
+    except Exception as e:
+        logger.error(f"Error fetching total order count: {e}")
+        return 0
+
+
 def fetch_top_items(
     store_name=None, start_date=None, end_date=None, account_filter="All", limit=20
 ):
