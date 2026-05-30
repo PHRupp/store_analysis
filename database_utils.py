@@ -811,3 +811,268 @@ def fetch_customer_ltv(
     except Exception as e:
         logger.error(f"Error fetching customer ltv: {e}")
         return pd.DataFrame(columns=["total_spend", "customer_category"])
+
+
+def fetch_unique_items():
+    """
+    Retrieves unique Item names from the items table that have at least 5 total pieces ordered, sorted alphabetically.
+    """
+    if not os.path.exists(DB_PATH):
+        return []
+
+    # Rushes don't count as item count / pieces, but we treat them as 1s here
+    # so that they show up in the plots. If they are zero, then they dont display
+    query = """
+    SELECT 
+        "Item" 
+    FROM 
+        items 
+    WHERE 
+        "Item" IS NOT NULL 
+    GROUP BY "Item" 
+    HAVING SUM(CASE WHEN LOWER("Item") LIKE '%rush%' THEN 1 ELSE "Total Pcs" END) >= 10 
+    ORDER BY "Item"
+    """
+    try:
+        logger.debug(f"Executing query: {query}")
+        start_time = time.perf_counter()
+        with sqlite3.connect(DB_PATH) as conn:
+            df = pd.read_sql_query(query, conn)
+        end_time = time.perf_counter()
+        logger.debug(
+            f"Query completed in {end_time - start_time:.4f} seconds. {len(df)} records returned."
+        )
+        return df["Item"].tolist()
+    except Exception as e:
+        logger.error(f"Error fetching unique items: {e}")
+        return []
+
+
+def fetch_item_pieces_by_week(
+    store_name=None,
+    start_date=None,
+    end_date=None,
+    account_filter="All",
+    selected_items=None,
+):
+    """
+    Retrieves the total pieces over time, aggregated by week.
+    """
+    if not os.path.exists(DB_PATH):
+        return pd.DataFrame(columns=["week", "total_pieces", "account_type"])
+
+    # Rushes don't count as item count / pieces, but we treat them as 1s here
+    # so that they show up in the plots. If they are zero, then they dont display
+    query = """
+    SELECT 
+        date(i."Placed") as placed_date,
+        CASE 
+            WHEN c."Business ID" IS NULL OR c."Business ID" = '' THEN 'Retail' 
+            ELSE 'Commercial' 
+        END as account_type,
+        SUM(
+            CASE WHEN LOWER(i."Item") LIKE '%rush%' THEN 1 ELSE i."Total Pcs" END
+        ) as total_pieces
+    FROM items i
+    JOIN orders o ON i."Order ID" = o."Order ID" AND i."Store ID" = o."Store ID"
+    JOIN customers c ON i."Customer ID" = c."Customer ID" AND i."Store ID" = c."Store ID"
+    WHERE i."Placed" IS NOT NULL
+    """
+    params = []
+
+    if store_name and store_name != "All":
+        query += ' AND o."Store Name" = ?'
+        params.append(store_name)
+    if start_date:
+        query += ' AND i."Placed" >= ?'
+        params.append(start_date)
+    if end_date:
+        query += ' AND i."Placed" <= ?'
+        params.append(end_date)
+    if account_filter != "All":
+        query += """ AND (CASE WHEN c."Business ID" IS NULL OR c."Business ID" = '' THEN 'Retail' ELSE 'Commercial' END) = ?"""
+        params.append(account_filter)
+    if selected_items:
+        placeholders = ",".join(["?"] * len(selected_items))
+        query += f' AND i."Item" IN ({placeholders})'
+        params.extend(selected_items)
+
+    query += " GROUP BY placed_date, account_type"
+
+    try:
+        logger.debug(f"Executing query: {query} with params: {params}")
+        start_time = time.perf_counter()
+        with sqlite3.connect(DB_PATH) as conn:
+            df = pd.read_sql_query(query, conn, params=params)
+        end_time = time.perf_counter()
+        logger.debug(
+            f"Query completed in {end_time - start_time:.4f} seconds. {len(df)} records returned."
+        )
+
+        if not df.empty:
+            df["placed_date"] = pd.to_datetime(df["placed_date"])
+            df = (
+                df.groupby(
+                    [pd.Grouper(key="placed_date", freq="W-MON"), "account_type"]
+                )["total_pieces"]
+                .sum()
+                .reset_index()
+            )
+            df.rename(columns={"placed_date": "week"}, inplace=True)
+            df["week"] = df["week"].dt.strftime("%Y-%m-%d")
+            df.sort_values(["week", "account_type"], inplace=True)
+
+        return df
+    except Exception as e:
+        logger.error(f"Error fetching item pieces by week: {e}")
+        return pd.DataFrame(columns=["week", "total_pieces", "account_type"])
+
+
+def fetch_total_order_count(
+    store_name=None, start_date=None, end_date=None, account_filter="All"
+):
+    """
+    Retrieves the total number of orders matching the filters.
+    """
+    if not os.path.exists(DB_PATH):
+        return 0
+
+    query = """
+    SELECT COUNT(DISTINCT o."Order ID")
+    FROM orders o
+    JOIN customers c ON o."Customer ID" = c."Customer ID" AND o."Store ID" = c."Store ID"
+    WHERE o."Placed" IS NOT NULL
+    """
+    params = []
+
+    if store_name and store_name != "All":
+        query += ' AND o."Store Name" = ?'
+        params.append(store_name)
+    if start_date:
+        query += ' AND o."Placed" >= ?'
+        params.append(start_date)
+    if end_date:
+        query += ' AND o."Placed" <= ?'
+        params.append(end_date)
+    if account_filter != "All":
+        query += """ AND (CASE WHEN c."Business ID" IS NULL OR c."Business ID" = '' THEN 'Retail' ELSE 'Commercial' END) = ?"""
+        params.append(account_filter)
+
+    try:
+        logger.debug(f"Executing query: {query} with params: {params}")
+        start_time = time.perf_counter()
+        with sqlite3.connect(DB_PATH) as conn:
+            cursor = conn.cursor()
+            cursor.execute(query, params)
+            result = cursor.fetchone()[0]
+        end_time = time.perf_counter()
+        logger.debug(
+            f"Query completed in {end_time - start_time:.4f} seconds. Result: {result} orders."
+        )
+        return result
+    except Exception as e:
+        logger.error(f"Error fetching total order count: {e}")
+        return 0
+
+
+def fetch_top_items(
+    store_name=None, start_date=None, end_date=None, account_filter="All", limit=20
+):
+    """
+    Retrieves the most frequent items within orders for market basket analysis.
+    """
+    if not os.path.exists(DB_PATH):
+        return pd.DataFrame(columns=["Item", "order_count"])
+
+    query = """
+    SELECT 
+        i."Item",
+        COUNT(DISTINCT i."Order ID") as order_count
+    FROM items i
+    JOIN orders o ON i."Order ID" = o."Order ID" AND i."Store ID" = o."Store ID"
+    JOIN customers c ON i."Customer ID" = c."Customer ID" AND i."Store ID" = c."Store ID"
+    WHERE i."Placed" IS NOT NULL AND i."Item" IS NOT NULL
+    """
+    params = []
+
+    if store_name and store_name != "All":
+        query += ' AND o."Store Name" = ?'
+        params.append(store_name)
+    if start_date:
+        query += ' AND i."Placed" >= ?'
+        params.append(start_date)
+    if end_date:
+        query += ' AND i."Placed" <= ?'
+        params.append(end_date)
+    if account_filter != "All":
+        query += """ AND (CASE WHEN c."Business ID" IS NULL OR c."Business ID" = '' THEN 'Retail' ELSE 'Commercial' END) = ?"""
+        params.append(account_filter)
+
+    query += ' GROUP BY i."Item" ORDER BY order_count DESC LIMIT ?'
+    params.append(limit)
+
+    try:
+        logger.debug(f"Executing query: {query} with params: {params}")
+        start_time = time.perf_counter()
+        with sqlite3.connect(DB_PATH) as conn:
+            df = pd.read_sql_query(query, conn, params=params)
+        end_time = time.perf_counter()
+        logger.debug(
+            f"Query completed in {end_time - start_time:.4f} seconds. {len(df)} records returned."
+        )
+        return df
+    except Exception as e:
+        logger.error(f"Error fetching top items: {e}")
+        return pd.DataFrame(columns=["Item", "order_count"])
+
+
+def fetch_top_item_pairs(
+    store_name=None, start_date=None, end_date=None, account_filter="All", limit=20
+):
+    """
+    Retrieves the most frequent item pairs within orders for market basket analysis.
+    """
+    if not os.path.exists(DB_PATH):
+        return pd.DataFrame(columns=["item_pair", "pair_count"])
+
+    query = """
+    SELECT 
+        i1."Item" || ' + ' || i2."Item" as item_pair,
+        COUNT(DISTINCT i1."Order ID") as pair_count
+    FROM items i1
+    JOIN items i2 ON i1."Order ID" = i2."Order ID" AND i1."Store ID" = i2."Store ID" AND i1."Item" < i2."Item"
+    JOIN orders o ON i1."Order ID" = o."Order ID" AND i1."Store ID" = o."Store ID"
+    JOIN customers c ON i1."Customer ID" = c."Customer ID" AND i1."Store ID" = c."Store ID"
+    WHERE i1."Placed" IS NOT NULL AND i1."Item" IS NOT NULL AND i2."Item" IS NOT NULL
+    """
+    params = []
+
+    if store_name and store_name != "All":
+        query += ' AND o."Store Name" = ?'
+        params.append(store_name)
+    if start_date:
+        query += ' AND i1."Placed" >= ?'
+        params.append(start_date)
+    if end_date:
+        query += ' AND i1."Placed" <= ?'
+        params.append(end_date)
+    if account_filter != "All":
+        query += """ AND (CASE WHEN c."Business ID" IS NULL OR c."Business ID" = '' THEN 'Retail' ELSE 'Commercial' END) = ?"""
+        params.append(account_filter)
+
+    query += ' GROUP BY i1."Item", i2."Item" ORDER BY pair_count DESC LIMIT ?'
+    params.append(limit)
+
+    try:
+        logger.debug(f"Executing query: {query} with params: {params}")
+        start_time = time.perf_counter()
+        with sqlite3.connect(DB_PATH) as conn:
+            df = pd.read_sql_query(query, conn, params=params)
+        end_time = time.perf_counter()
+        logger.debug(
+            f"Query completed in {end_time - start_time:.4f} seconds. {len(df)} records returned."
+        )
+        return df
+    except Exception as e:
+        logger.error(f"Error fetching top item pairs: {e}")
+        return pd.DataFrame(columns=["item_pair", "pair_count"])
