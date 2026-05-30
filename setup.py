@@ -7,6 +7,7 @@ setup(
     install_requires=[
         "pandas",
         "openpyxl",
+        "SQLAlchemy",
     ],
     python_requires=">=3.8",
 )

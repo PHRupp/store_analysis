@@ -1,8 +1,20 @@
-import sqlite3
 import pandas as pd
 import os
 import logging
 import time
+import sqlalchemy as sa
+from sqlalchemy import (
+    select,
+    func,
+    case,
+    and_,
+    desc,
+    literal_column,
+    text,
+    table,
+    column,
+    cast,
+)
 
 # Database configuration
 DB_NAME = "business_data.db"
@@ -17,12 +29,14 @@ def fetch_store_names():
     """
     if not os.path.exists(DB_PATH):
         return []
-    query = 'SELECT "Store Name" FROM store_lookup ORDER BY "Store Name"'
+    store_lookup = table("store_lookup", column("Store Name"))
+    stmt = select(store_lookup.c["Store Name"]).order_by(store_lookup.c["Store Name"])
     try:
-        logger.debug(f"Executing query: {query}")
+        logger.debug(f"Executing query: {stmt}")
         start_time = time.perf_counter()
-        with sqlite3.connect(DB_PATH) as conn:
-            df = pd.read_sql_query(query, conn)
+        engine = sa.create_engine(f"sqlite:///{DB_PATH}")
+        with engine.connect() as conn:
+            df = pd.read_sql_query(stmt, conn)
         end_time = time.perf_counter()
         logger.debug(
             f"Query completed in {end_time - start_time:.4f} seconds. {len(df)} records returned."
@@ -44,31 +58,42 @@ def fetch_customer_stats(
             columns=["customer_category", "customer_count", "total_spend"]
         )
 
-    query = 'SELECT "Customer Category" AS customer_category, COUNT("Customer ID") as customer_count, SUM(total_spend) as total_spend FROM customer_summary'
+    customer_summary = table(
+        "customer_summary",
+        column("Customer Category"),
+        column("Customer ID"),
+        column("total_spend"),
+        column("Store Name"),
+        column("account_type"),
+        column("first_order_date"),
+    )
+
+    stmt = select(
+        customer_summary.c["Customer Category"].label("customer_category"),
+        func.count(customer_summary.c["Customer ID"]).label("customer_count"),
+        func.sum(customer_summary.c.total_spend).label("total_spend"),
+    )
+
     conditions = []
-    params = []
     if store_name and store_name != "All":
-        conditions.append('"Store Name" = ?')
-        params.append(store_name)
+        conditions.append(customer_summary.c["Store Name"] == store_name)
     if account_filter != "All":
-        conditions.append("account_type = ?")
-        params.append(account_filter)
+        conditions.append(customer_summary.c.account_type == account_filter)
     if start_date:
-        conditions.append("first_order_date >= ?")
-        params.append(start_date)
+        conditions.append(customer_summary.c.first_order_date >= start_date)
     if end_date:
-        conditions.append("first_order_date <= ?")
-        params.append(end_date)
+        conditions.append(customer_summary.c.first_order_date <= end_date)
 
     if conditions:
-        query += " WHERE " + " AND ".join(conditions)
-    query += ' GROUP BY "Customer Category"'
+        stmt = stmt.where(and_(*conditions))
+    stmt = stmt.group_by(customer_summary.c["Customer Category"])
 
     try:
-        logger.debug(f"Executing query: {query} with params: {params}")
+        logger.debug(f"Executing query: {stmt}")
         start_time = time.perf_counter()
-        with sqlite3.connect(DB_PATH) as conn:
-            df = pd.read_sql_query(query, conn, params=params)
+        engine = sa.create_engine(f"sqlite:///{DB_PATH}")
+        with engine.connect() as conn:
+            df = pd.read_sql_query(stmt, conn)
         end_time = time.perf_counter()
         logger.debug(
             f"Query completed in {end_time - start_time:.4f} seconds. {len(df)} records returned."
@@ -99,38 +124,48 @@ def fetch_top_customers(store_name=None, account_filter="All", limit=50):
             ]
         )
 
-    query = """
-    SELECT 
-        "Name", 
-        total_spend, 
-        median_spend, 
-        "Customer Category" AS customer_category, 
-        order_count, 
-        "Discount" AS discount, 
-        "days since last order" AS recency, 
-        median_days_between_orders 
-    FROM customer_summary
-    """
+    customer_summary = table(
+        "customer_summary",
+        column("Name"),
+        column("total_spend"),
+        column("median_spend"),
+        column("Customer Category"),
+        column("order_count"),
+        column("Discount"),
+        column("days since last order"),
+        column("median_days_between_orders"),
+        column("Store Name"),
+        column("account_type"),
+    )
+
+    stmt = select(
+        customer_summary.c.Name,
+        customer_summary.c.total_spend,
+        customer_summary.c.median_spend,
+        customer_summary.c["Customer Category"].label("customer_category"),
+        customer_summary.c.order_count,
+        customer_summary.c.Discount.label("discount"),
+        customer_summary.c["days since last order"].label("recency"),
+        customer_summary.c.median_days_between_orders,
+    )
+
     conditions = []
-    params = []
     if store_name and store_name != "All":
-        conditions.append('"Store Name" = ?')
-        params.append(store_name)
+        conditions.append(customer_summary.c["Store Name"] == store_name)
     if account_filter != "All":
-        conditions.append("account_type = ?")
-        params.append(account_filter)
+        conditions.append(customer_summary.c.account_type == account_filter)
 
     if conditions:
-        query += " WHERE " + " AND ".join(conditions)
+        stmt = stmt.where(and_(*conditions))
 
-    query += " ORDER BY total_spend DESC LIMIT ?"
-    params.append(limit)
+    stmt = stmt.order_by(desc(customer_summary.c.total_spend)).limit(limit)
 
     try:
-        logger.debug(f"Executing query: {query} with params: {params}")
+        logger.debug(f"Executing query: {stmt}")
         start_time = time.perf_counter()
-        with sqlite3.connect(DB_PATH) as conn:
-            df = pd.read_sql_query(query, conn, params=params)
+        engine = sa.create_engine(f"sqlite:///{DB_PATH}")
+        with engine.connect() as conn:
+            df = pd.read_sql_query(stmt, conn)
         end_time = time.perf_counter()
         logger.debug(
             f"Query completed in {end_time - start_time:.4f} seconds. {len(df)} records returned."
@@ -172,46 +207,58 @@ def fetch_overdue_customers(
             ]
         )
 
-    query = """
-    SELECT 
-        "Name", 
-        ("days since last order" - median_days_between_orders) AS days_past_expected,
-        median_spend,
-        order_count,
-        median_days_between_orders,
-        "days since last order" AS recency,
-        "Customer Category" AS customer_category,
-        total_spend
-    FROM customer_summary
-    """
-    conditions = [
-        "median_days_between_orders IS NOT NULL",
-        '("days since last order" - median_days_between_orders) < 360',
-        "order_count > 10",
-    ]
-    params = []
-    if store_name and store_name != "All":
-        conditions.append('"Store Name" = ?')
-        params.append(store_name)
-    if account_filter != "All":
-        conditions.append("account_type = ?")
-        params.append(account_filter)
-    if start_date:
-        conditions.append("first_order_date >= ?")
-        params.append(start_date)
-    if end_date:
-        conditions.append("first_order_date <= ?")
-        params.append(end_date)
+    customer_summary = table(
+        "customer_summary",
+        column("Name"),
+        column("days since last order"),
+        column("median_days_between_orders"),
+        column("median_spend"),
+        column("order_count"),
+        column("Customer Category"),
+        column("total_spend"),
+        column("Store Name"),
+        column("account_type"),
+        column("first_order_date"),
+    )
 
-    query += " WHERE " + " AND ".join(conditions)
-    query += " ORDER BY days_past_expected DESC LIMIT ?"
-    params.append(limit)
+    days_past_expected = (
+        customer_summary.c["days since last order"]
+        - customer_summary.c.median_days_between_orders
+    ).label("days_past_expected")
+
+    stmt = select(
+        customer_summary.c.Name,
+        days_past_expected,
+        customer_summary.c.median_spend,
+        customer_summary.c.order_count,
+        customer_summary.c.median_days_between_orders,
+        customer_summary.c["days since last order"].label("recency"),
+        customer_summary.c["Customer Category"].label("customer_category"),
+        customer_summary.c.total_spend,
+    )
+
+    conditions = [
+        customer_summary.c.median_days_between_orders.isnot(None),
+        days_past_expected < 360,
+        customer_summary.c.order_count > 10,
+    ]
+    if store_name and store_name != "All":
+        conditions.append(customer_summary.c["Store Name"] == store_name)
+    if account_filter != "All":
+        conditions.append(customer_summary.c.account_type == account_filter)
+    if start_date:
+        conditions.append(customer_summary.c.first_order_date >= start_date)
+    if end_date:
+        conditions.append(customer_summary.c.first_order_date <= end_date)
+
+    stmt = stmt.where(and_(*conditions)).order_by(desc(days_past_expected)).limit(limit)
 
     try:
-        logger.debug(f"Executing query: {query} with params: {params}")
+        logger.debug(f"Executing query: {stmt}")
         start_time = time.perf_counter()
-        with sqlite3.connect(DB_PATH) as conn:
-            df = pd.read_sql_query(query, conn, params=params)
+        engine = sa.create_engine(f"sqlite:///{DB_PATH}")
+        with engine.connect() as conn:
+            df = pd.read_sql_query(stmt, conn)
         end_time = time.perf_counter()
         logger.debug(
             f"Query completed in {end_time - start_time:.4f} seconds. {len(df)} records returned."
@@ -249,32 +296,51 @@ def fetch_new_customers_trend(
             ]
         )
 
-    query = 'SELECT strftime("%Y-%m", first_order_date) AS month_year, "Customer Category" AS customer_category, COUNT("Customer ID") AS new_customer_count, SUM(CASE WHEN order_count > 1 THEN 1 ELSE 0 END) AS returning_customer_count FROM customer_summary'
+    customer_summary = table(
+        "customer_summary",
+        column("first_order_date"),
+        column("Customer Category"),
+        column("Customer ID"),
+        column("order_count"),
+        column("Store Name"),
+        column("account_type"),
+    )
+
+    month_year = func.strftime("%Y-%m", customer_summary.c.first_order_date).label(
+        "month_year"
+    )
+    stmt = select(
+        month_year,
+        customer_summary.c["Customer Category"].label("customer_category"),
+        func.count(customer_summary.c["Customer ID"]).label("new_customer_count"),
+        func.sum(case((customer_summary.c.order_count > 1, 1), else_=0)).label(
+            "returning_customer_count"
+        ),
+    )
+
     conditions = []
-    params = []
     if store_name and store_name != "All":
-        conditions.append('"Store Name" = ?')
-        params.append(store_name)
+        conditions.append(customer_summary.c["Store Name"] == store_name)
     if account_filter != "All":
-        conditions.append("account_type = ?")
-        params.append(account_filter)
+        conditions.append(customer_summary.c.account_type == account_filter)
     if start_date:
-        conditions.append("first_order_date >= ?")
-        params.append(start_date)
+        conditions.append(customer_summary.c.first_order_date >= start_date)
     if end_date:
-        conditions.append("first_order_date <= ?")
-        params.append(end_date)
+        conditions.append(customer_summary.c.first_order_date <= end_date)
 
     if conditions:
-        query += " WHERE " + " AND ".join(conditions)
+        stmt = stmt.where(and_(*conditions))
 
-    query += " GROUP BY month_year, customer_category ORDER BY month_year ASC"
+    stmt = stmt.group_by(month_year, customer_summary.c["Customer Category"]).order_by(
+        month_year.asc()
+    )
 
     try:
-        logger.debug(f"Executing query: {query} with params: {params}")
+        logger.debug(f"Executing query: {stmt}")
         start_time = time.perf_counter()
-        with sqlite3.connect(DB_PATH) as conn:
-            df = pd.read_sql_query(query, conn, params=params)
+        engine = sa.create_engine(f"sqlite:///{DB_PATH}")
+        with engine.connect() as conn:
+            df = pd.read_sql_query(stmt, conn)
         end_time = time.perf_counter()
         logger.debug(
             f"Query completed in {end_time - start_time:.4f} seconds. {len(df)} records returned."
@@ -307,35 +373,50 @@ def fetch_last_order_trend(
             columns=["month_year", "customer_category", "last_order_count"]
         )
 
-    query = 'SELECT strftime("%Y-%m", last_order_date) AS month_year, "Customer Category" AS customer_category, COUNT("Customer ID") AS last_order_count FROM customer_summary'
+    customer_summary = table(
+        "customer_summary",
+        column("last_order_date"),
+        column("Customer Category"),
+        column("Customer ID"),
+        column("Store Name"),
+        column("account_type"),
+        column("days since last order"),
+    )
+
+    month_year = func.strftime("%Y-%m", customer_summary.c.last_order_date).label(
+        "month_year"
+    )
+    stmt = select(
+        month_year,
+        customer_summary.c["Customer Category"].label("customer_category"),
+        func.count(customer_summary.c["Customer ID"]).label("last_order_count"),
+    )
+
     conditions = []
-    params = []
     if store_name and store_name != "All":
-        conditions.append('"Store Name" = ?')
-        params.append(store_name)
+        conditions.append(customer_summary.c["Store Name"] == store_name)
     if account_filter != "All":
-        conditions.append("account_type = ?")
-        params.append(account_filter)
+        conditions.append(customer_summary.c.account_type == account_filter)
     if start_date:
-        conditions.append("last_order_date >= ?")
-        params.append(start_date)
+        conditions.append(customer_summary.c.last_order_date >= start_date)
     if end_date:
-        conditions.append("last_order_date <= ?")
-        params.append(end_date)
+        conditions.append(customer_summary.c.last_order_date <= end_date)
     if min_lapsed_days is not None:
-        conditions.append('"days since last order" > ?')
-        params.append(min_lapsed_days)
+        conditions.append(customer_summary.c["days since last order"] > min_lapsed_days)
 
     if conditions:
-        query += " WHERE " + " AND ".join(conditions)
+        stmt = stmt.where(and_(*conditions))
 
-    query += " GROUP BY month_year, customer_category ORDER BY month_year ASC"
+    stmt = stmt.group_by(month_year, customer_summary.c["Customer Category"]).order_by(
+        text("month_year ASC")
+    )
 
     try:
-        logger.debug(f"Executing query: {query} with params: {params}")
+        logger.debug(f"Executing query: {stmt}")
         start_time = time.perf_counter()
-        with sqlite3.connect(DB_PATH) as conn:
-            df = pd.read_sql_query(query, conn, params=params)
+        engine = sa.create_engine(f"sqlite:///{DB_PATH}")
+        with engine.connect() as conn:
+            df = pd.read_sql_query(stmt, conn)
         end_time = time.perf_counter()
         logger.debug(
             f"Query completed in {end_time - start_time:.4f} seconds. {len(df)} records returned."
@@ -359,45 +440,64 @@ def fetch_monthly_revenue(
         logger.error(f"Database {DB_NAME} not found. Please run load_db.py first.")
         return pd.DataFrame(columns=["month_year", "total_revenue"])
 
-    # Base query for monthly aggregation with commercial/retail split
-    query = """
-    SELECT 
-        strftime("%Y-%m", o."Placed") as month_year, 
-        CASE 
-            WHEN c."Business ID" IS NULL OR c."Business ID" = '' THEN 'Retail' 
-            ELSE 'Commercial' 
-        END as account_type,
-        SUM(o."Total") as total_revenue,
-        SUM(o."Pieces") as total_pieces
-    FROM orders o
-    JOIN customers c ON o."Customer ID" = c."Customer ID" AND o."Store ID" = c."Store ID"
-    WHERE o."Placed" IS NOT NULL
-    """
-    params = []
+    orders_t = table(
+        "orders",
+        column("Placed"),
+        column("Total"),
+        column("Pieces"),
+        column("Customer ID"),
+        column("Store ID"),
+        column("Store Name"),
+    )
+    customers_t = table(
+        "customers", column("Customer ID"), column("Store ID"), column("Business ID")
+    )
+
+    month_year = func.strftime("%Y-%m", orders_t.c.Placed).label("month_year")
+    account_type = case(
+        (customers_t.c["Business ID"].is_(None), "Retail"),
+        (customers_t.c["Business ID"] == "", "Retail"),
+        else_="Commercial",
+    ).label("account_type")
+
+    stmt = select(
+        month_year,
+        account_type,
+        func.sum(orders_t.c.Total).label("total_revenue"),
+        func.sum(orders_t.c.Pieces).label("total_pieces"),
+    ).select_from(
+        orders_t.join(
+            customers_t,
+            and_(
+                orders_t.c["Customer ID"] == customers_t.c["Customer ID"],
+                orders_t.c["Store ID"] == customers_t.c["Store ID"],
+            ),
+        )
+    )
+
+    conditions = [orders_t.c.Placed.isnot(None)]
 
     if store_name and store_name != "All":
-        query += ' AND o."Store Name" = ?'
-        params.append(store_name)
-
+        conditions.append(orders_t.c["Store Name"] == store_name)
     if start_date:
-        query += ' AND o."Placed" >= ?'
-        params.append(start_date)
-
+        conditions.append(orders_t.c.Placed >= start_date)
     if end_date:
-        query += ' AND o."Placed" <= ?'
-        params.append(end_date)
-
+        conditions.append(orders_t.c.Placed <= end_date)
     if account_filter != "All":
-        query += """AND (CASE WHEN c."Business ID" IS NULL OR c."Business ID" = '' THEN 'Retail' ELSE 'Commercial' END) = ?"""
-        params.append(account_filter)
+        conditions.append(account_type == account_filter)
 
-    query += " GROUP BY month_year, account_type ORDER BY month_year ASC"
+    stmt = (
+        stmt.where(and_(*conditions))
+        .group_by(month_year, account_type)
+        .order_by(text("month_year ASC"))
+    )
 
     try:
-        logger.debug(f"Executing query: {query} with params: {params}")
+        logger.debug(f"Executing query: {stmt}")
         start_time = time.perf_counter()
-        with sqlite3.connect(DB_PATH) as conn:
-            df = pd.read_sql_query(query, conn, params=params)
+        engine = sa.create_engine(f"sqlite:///{DB_PATH}")
+        with engine.connect() as conn:
+            df = pd.read_sql_query(stmt, conn)
         end_time = time.perf_counter()
         logger.debug(
             f"Query completed in {end_time - start_time:.4f} seconds. {len(df)} records returned."
@@ -417,52 +517,81 @@ def fetch_order_trends(
     if not os.path.exists(DB_PATH):
         return pd.DataFrame(columns=["month_year", "median_invoice", "order_count"])
 
-    conditions = ['o."Placed" IS NOT NULL']
-    params = []
+    orders_t = table(
+        "orders",
+        column("Placed"),
+        column("Total"),
+        column("Customer ID"),
+        column("Store ID"),
+        column("Store Name"),
+    )
+    customers_t = table(
+        "customers", column("Customer ID"), column("Store ID"), column("Business ID")
+    )
+
+    month_year = func.strftime("%Y-%m", orders_t.c.Placed).label("month_year")
+    rn = (
+        func.row_number()
+        .over(
+            partition_by=func.strftime("%Y-%m", orders_t.c.Placed),
+            order_by=orders_t.c.Total,
+        )
+        .label("rn")
+    )
+    cnt = (
+        func.count()
+        .over(partition_by=func.strftime("%Y-%m", orders_t.c.Placed))
+        .label("cnt")
+    )
+
+    raw_data = select(month_year, orders_t.c.Total, rn, cnt).select_from(
+        orders_t.join(
+            customers_t,
+            and_(
+                orders_t.c["Customer ID"] == customers_t.c["Customer ID"],
+                orders_t.c["Store ID"] == customers_t.c["Store ID"],
+            ),
+        )
+    )
+
+    conditions = [orders_t.c.Placed.isnot(None)]
 
     if store_name and store_name != "All":
-        conditions.append('o."Store Name" = ?')
-        params.append(store_name)
+        conditions.append(orders_t.c["Store Name"] == store_name)
     if start_date:
-        conditions.append('o."Placed" >= ?')
-        params.append(start_date)
+        conditions.append(orders_t.c.Placed >= start_date)
     if end_date:
-        conditions.append('o."Placed" <= ?')
-        params.append(end_date)
+        conditions.append(orders_t.c.Placed <= end_date)
     if account_filter != "All":
         conditions.append(
-            "(CASE WHEN c.\"Business ID\" IS NULL OR c.\"Business ID\" = '' THEN 'Retail' ELSE 'Commercial' END) = ?"
+            case(
+                (customers_t.c["Business ID"].is_(None), "Retail"),
+                (customers_t.c["Business ID"] == "", "Retail"),
+                else_="Commercial",
+            )
+            == account_filter
         )
-        params.append(account_filter)
 
-    where_clause = " WHERE " + " AND ".join(conditions)
+    raw_data = raw_data.where(and_(*conditions)).cte("RawData")
 
-    query = f"""
-    WITH RawData AS (
-        SELECT 
-            strftime("%Y-%m", o."Placed") as month_year, 
-            o."Total",
-            ROW_NUMBER() OVER (PARTITION BY strftime("%Y-%m", o."Placed") ORDER BY o."Total") as rn,
-            COUNT(*) OVER (PARTITION BY strftime("%Y-%m", o."Placed")) as cnt
-        FROM orders o
-        JOIN customers c ON o."Customer ID" = c."Customer ID" AND o."Store ID" = c."Store ID"
-        {where_clause}
+    stmt = (
+        select(
+            raw_data.c.month_year,
+            func.avg(raw_data.c.Total).label("median_invoice"),
+            func.max(raw_data.c.cnt).label("order_count"),
+        )
+        .select_from(raw_data)
+        .where(raw_data.c.rn.between(raw_data.c.cnt / 2.0, raw_data.c.cnt / 2.0 + 1))
+        .group_by(raw_data.c.month_year)
+        .order_by(raw_data.c.month_year.asc())
     )
-    SELECT 
-        month_year, 
-        AVG("Total") as median_invoice,
-        MAX(cnt) as order_count
-    FROM RawData
-    WHERE rn BETWEEN cnt / 2.0 AND cnt / 2.0 + 1
-    GROUP BY month_year
-    ORDER BY month_year ASC
-    """
 
     try:
-        logger.debug(f"Executing query: {query} with params: {params}")
+        logger.debug(f"Executing query: {stmt}")
         start_time = time.perf_counter()
-        with sqlite3.connect(DB_PATH) as conn:
-            df = pd.read_sql_query(query, conn, params=params)
+        engine = sa.create_engine(f"sqlite:///{DB_PATH}")
+        with engine.connect() as conn:
+            df = pd.read_sql_query(stmt, conn)
         end_time = time.perf_counter()
         logger.debug(
             f"Query completed in {end_time - start_time:.4f} seconds. {len(df)} records returned."
@@ -482,43 +611,76 @@ def fetch_category_order_trends(
     if not os.path.exists(DB_PATH):
         return pd.DataFrame(columns=["month_year", "customer_category", "order_count"])
 
-    conditions = ['o."Placed" IS NOT NULL']
-    params = []
+    orders_t = table(
+        "orders",
+        column("Placed"),
+        column("Order ID"),
+        column("Customer ID"),
+        column("Store ID"),
+        column("Store Name"),
+    )
+    customer_summary = table(
+        "customer_summary",
+        column("Customer ID"),
+        column("Store ID"),
+        column("Customer Category"),
+    )
+    customers_t = table(
+        "customers", column("Customer ID"), column("Store ID"), column("Business ID")
+    )
+
+    month_year = func.strftime("%Y-%m", orders_t.c.Placed).label("month_year")
+
+    stmt = select(
+        month_year,
+        customer_summary.c["Customer Category"].label("customer_category"),
+        func.count(orders_t.c["Order ID"]).label("order_count"),
+    ).select_from(
+        orders_t.join(
+            customer_summary,
+            and_(
+                orders_t.c["Customer ID"] == customer_summary.c["Customer ID"],
+                orders_t.c["Store ID"] == customer_summary.c["Store ID"],
+            ),
+        ).join(
+            customers_t,
+            and_(
+                orders_t.c["Customer ID"] == customers_t.c["Customer ID"],
+                orders_t.c["Store ID"] == customers_t.c["Store ID"],
+            ),
+        )
+    )
+
+    conditions = [orders_t.c.Placed.isnot(None)]
 
     if store_name and store_name != "All":
-        conditions.append('o."Store Name" = ?')
-        params.append(store_name)
+        conditions.append(orders_t.c["Store Name"] == store_name)
     if start_date:
-        conditions.append('o."Placed" >= ?')
-        params.append(start_date)
+        conditions.append(orders_t.c.Placed >= start_date)
     if end_date:
-        conditions.append('o."Placed" <= ?')
-        params.append(end_date)
+        conditions.append(orders_t.c.Placed <= end_date)
     if account_filter != "All":
         conditions.append(
-            "(CASE WHEN c.\"Business ID\" IS NULL OR c.\"Business ID\" = '' THEN 'Retail' ELSE 'Commercial' END) = ?"
+            case(
+                (customers_t.c["Business ID"].is_(None), "Retail"),
+                (customers_t.c["Business ID"] == "", "Retail"),
+                else_="Commercial",
+            )
+            == account_filter
         )
-        params.append(account_filter)
 
-    where_clause = " WHERE " + " AND ".join(conditions)
+    stmt = (
+        stmt.where(and_(*conditions))
+        .group_by(month_year, customer_summary.c["Customer Category"])
+        .order_by(text("month_year ASC"))
+    )
 
-    query = f"""
-    SELECT 
-        strftime("%Y-%m", o."Placed") as month_year, 
-        cs."Customer Category" as customer_category,
-        COUNT(o."Order ID") as order_count
-    FROM orders o
-    JOIN customer_summary cs ON o."Customer ID" = cs."Customer ID" AND o."Store ID" = cs."Store ID"
-    JOIN customers c ON o."Customer ID" = c."Customer ID" AND o."Store ID" = c."Store ID"
-    {where_clause}
-    GROUP BY month_year, customer_category
-    ORDER BY month_year ASC
-    """
     try:
-        logger.debug(f"Executing query: {query} with params: {params}")
+        logger.debug(f"Executing query: {stmt}")
         start_time = time.perf_counter()
-        with sqlite3.connect(DB_PATH) as conn:
-            df = pd.read_sql_query(query, conn, params=params)
+        engine = sa.create_engine(f"sqlite:///{DB_PATH}")
+        with engine.connect() as conn:
+            df = pd.read_sql_query(stmt, conn)
         end_time = time.perf_counter()
         logger.debug(
             f"Query completed in {end_time - start_time:.4f} seconds. {len(df)} records returned."
@@ -538,41 +700,69 @@ def fetch_order_totals(
     if not os.path.exists(DB_PATH):
         return pd.DataFrame(columns=["Total", "customer_category"])
 
-    conditions = ['o."Placed" IS NOT NULL']
-    params = []
+    orders_t = table(
+        "orders",
+        column("Total"),
+        column("Placed"),
+        column("Customer ID"),
+        column("Store ID"),
+        column("Store Name"),
+    )
+    customers_t = table(
+        "customers", column("Customer ID"), column("Store ID"), column("Business ID")
+    )
+    customer_summary = table(
+        "customer_summary",
+        column("Customer ID"),
+        column("Store ID"),
+        column("Customer Category"),
+    )
+
+    stmt = select(
+        orders_t.c.Total,
+        customer_summary.c["Customer Category"].label("customer_category"),
+    ).select_from(
+        orders_t.join(
+            customers_t,
+            and_(
+                orders_t.c["Customer ID"] == customers_t.c["Customer ID"],
+                orders_t.c["Store ID"] == customers_t.c["Store ID"],
+            ),
+        ).join(
+            customer_summary,
+            and_(
+                orders_t.c["Customer ID"] == customer_summary.c["Customer ID"],
+                orders_t.c["Store ID"] == customer_summary.c["Store ID"],
+            ),
+        )
+    )
+
+    conditions = [orders_t.c.Placed.isnot(None)]
 
     if store_name and store_name != "All":
-        conditions.append('o."Store Name" = ?')
-        params.append(store_name)
+        conditions.append(orders_t.c["Store Name"] == store_name)
     if start_date:
-        conditions.append('o."Placed" >= ?')
-        params.append(start_date)
+        conditions.append(orders_t.c.Placed >= start_date)
     if end_date:
-        conditions.append('o."Placed" <= ?')
-        params.append(end_date)
+        conditions.append(orders_t.c.Placed <= end_date)
     if account_filter != "All":
         conditions.append(
-            "(CASE WHEN c.\"Business ID\" IS NULL OR c.\"Business ID\" = '' THEN 'Retail' ELSE 'Commercial' END) = ?"
+            case(
+                (customers_t.c["Business ID"].is_(None), "Retail"),
+                (customers_t.c["Business ID"] == "", "Retail"),
+                else_="Commercial",
+            )
+            == account_filter
         )
-        params.append(account_filter)
 
-    where_clause = " WHERE " + " AND ".join(conditions)
-
-    query = f"""
-    SELECT 
-        o."Total",
-        cs."Customer Category" as customer_category
-    FROM orders o
-    JOIN customers c ON o."Customer ID" = c."Customer ID" AND o."Store ID" = c."Store ID"
-    JOIN customer_summary cs ON o."Customer ID" = cs."Customer ID" AND o."Store ID" = cs."Store ID"
-    {where_clause}
-    """
+    stmt = stmt.where(and_(*conditions))
 
     try:
-        logger.debug(f"Executing query: {query} with params: {params}")
+        logger.debug(f"Executing query: {stmt}")
         start_time = time.perf_counter()
-        with sqlite3.connect(DB_PATH) as conn:
-            df = pd.read_sql_query(query, conn, params=params)
+        engine = sa.create_engine(f"sqlite:///{DB_PATH}")
+        with engine.connect() as conn:
+            df = pd.read_sql_query(stmt, conn)
         end_time = time.perf_counter()
         logger.debug(
             f"Query completed in {end_time - start_time:.4f} seconds. {len(df)} records returned."
@@ -596,50 +786,79 @@ def fetch_daytime_data(
     if not os.path.exists(DB_PATH):
         return pd.DataFrame(columns=["placed_hour", "customer_category", "order_count"])
 
+    orders_t = table(
+        "orders",
+        column("Placed"),
+        column("Customer ID"),
+        column("Store ID"),
+        column("Store Name"),
+    )
+    customers_t = table(
+        "customers", column("Customer ID"), column("Store ID"), column("Business ID")
+    )
+    customer_summary = table(
+        "customer_summary",
+        column("Customer ID"),
+        column("Store ID"),
+        column("Customer Category"),
+    )
+
+    placed_hour = func.strftime("%H", orders_t.c.Placed).label("placed_hour")
+
+    stmt = select(
+        placed_hour,
+        customer_summary.c["Customer Category"].label("customer_category"),
+        func.count().label("order_count"),
+    ).select_from(
+        orders_t.join(
+            customers_t,
+            and_(
+                orders_t.c["Customer ID"] == customers_t.c["Customer ID"],
+                orders_t.c["Store ID"] == customers_t.c["Store ID"],
+            ),
+        ).join(
+            customer_summary,
+            and_(
+                orders_t.c["Customer ID"] == customer_summary.c["Customer ID"],
+                orders_t.c["Store ID"] == customer_summary.c["Store ID"],
+            ),
+        )
+    )
+
     conditions = [
-        'o."Placed" IS NOT NULL',
-        'CAST(strftime("%H", o."Placed") AS INTEGER) BETWEEN 7 AND 19',
+        orders_t.c.Placed.isnot(None),
+        cast(func.strftime("%H", orders_t.c.Placed), sa.Integer).between(7, 19),
     ]
-    params = []
 
     if store_name and store_name != "All":
-        conditions.append('o."Store Name" = ?')
-        params.append(store_name)
+        conditions.append(orders_t.c["Store Name"] == store_name)
     if start_date:
-        conditions.append('o."Placed" >= ?')
-        params.append(start_date)
+        conditions.append(orders_t.c.Placed >= start_date)
     if end_date:
-        conditions.append('o."Placed" <= ?')
-        params.append(end_date)
+        conditions.append(orders_t.c.Placed <= end_date)
     if account_filter != "All":
         conditions.append(
-            "(CASE WHEN c.\"Business ID\" IS NULL OR c.\"Business ID\" = '' THEN 'Retail' ELSE 'Commercial' END) = ?"
+            case(
+                (customers_t.c["Business ID"].is_(None), "Retail"),
+                (customers_t.c["Business ID"] == "", "Retail"),
+                else_="Commercial",
+            )
+            == account_filter
         )
-        params.append(account_filter)
 
     if day_of_week and day_of_week != "All":
-        conditions.append("strftime('%w', o.\"Placed\") = ?")
-        params.append(str(day_of_week))
+        conditions.append(func.strftime("%w", orders_t.c.Placed) == str(day_of_week))
 
-    where_clause = " WHERE " + " AND ".join(conditions)
-
-    query = f"""
-    SELECT 
-        strftime('%H', o."Placed") as placed_hour,
-        cs."Customer Category" as customer_category,
-        COUNT(*) as order_count
-    FROM orders o
-    JOIN customers c ON o."Customer ID" = c."Customer ID" AND o."Store ID" = c."Store ID"
-    JOIN customer_summary cs ON o."Customer ID" = cs."Customer ID" AND o."Store ID" = cs."Store ID"
-    {where_clause}
-    GROUP BY 1, 2
-    """
+    stmt = stmt.where(and_(*conditions)).group_by(
+        literal_column("1"), literal_column("2")
+    )
 
     try:
-        logger.debug(f"Executing query: {query} with params: {params}")
+        logger.debug(f"Executing query: {stmt}")
         start_time = time.perf_counter()
-        with sqlite3.connect(DB_PATH) as conn:
-            df = pd.read_sql_query(query, conn, params=params)
+        engine = sa.create_engine(f"sqlite:///{DB_PATH}")
+        with engine.connect() as conn:
+            df = pd.read_sql_query(stmt, conn)
         end_time = time.perf_counter()
         logger.debug(
             f"Query completed in {end_time - start_time:.4f} seconds. {len(df)} records returned."
@@ -665,50 +884,80 @@ def fetch_collection_data(
             columns=["collected_hour", "customer_category", "order_count"]
         )
 
+    orders_t = table(
+        "orders",
+        column("Placed"),
+        column("Collected"),
+        column("Customer ID"),
+        column("Store ID"),
+        column("Store Name"),
+    )
+    customers_t = table(
+        "customers", column("Customer ID"), column("Store ID"), column("Business ID")
+    )
+    customer_summary = table(
+        "customer_summary",
+        column("Customer ID"),
+        column("Store ID"),
+        column("Customer Category"),
+    )
+
+    collected_hour = func.strftime("%H", orders_t.c.Collected).label("collected_hour")
+
+    stmt = select(
+        collected_hour,
+        customer_summary.c["Customer Category"].label("customer_category"),
+        func.count().label("order_count"),
+    ).select_from(
+        orders_t.join(
+            customers_t,
+            and_(
+                orders_t.c["Customer ID"] == customers_t.c["Customer ID"],
+                orders_t.c["Store ID"] == customers_t.c["Store ID"],
+            ),
+        ).join(
+            customer_summary,
+            and_(
+                orders_t.c["Customer ID"] == customer_summary.c["Customer ID"],
+                orders_t.c["Store ID"] == customer_summary.c["Store ID"],
+            ),
+        )
+    )
+
     conditions = [
-        'o."Collected" IS NOT NULL',
-        'CAST(strftime("%H", o."Collected") AS INTEGER) BETWEEN 7 AND 19',
+        orders_t.c.Collected.isnot(None),
+        cast(func.strftime("%H", orders_t.c.Collected), sa.Integer).between(7, 19),
     ]
-    params = []
 
     if store_name and store_name != "All":
-        conditions.append('o."Store Name" = ?')
-        params.append(store_name)
+        conditions.append(orders_t.c["Store Name"] == store_name)
     if start_date:
-        conditions.append('o."Placed" >= ?')
-        params.append(start_date)
+        conditions.append(orders_t.c.Placed >= start_date)
     if end_date:
-        conditions.append('o."Placed" <= ?')
-        params.append(end_date)
+        conditions.append(orders_t.c.Placed <= end_date)
     if account_filter != "All":
         conditions.append(
-            "(CASE WHEN c.\"Business ID\" IS NULL OR c.\"Business ID\" = '' THEN 'Retail' ELSE 'Commercial' END) = ?"
+            case(
+                (customers_t.c["Business ID"].is_(None), "Retail"),
+                (customers_t.c["Business ID"] == "", "Retail"),
+                else_="Commercial",
+            )
+            == account_filter
         )
-        params.append(account_filter)
 
     if day_of_week and day_of_week != "All":
-        conditions.append("strftime('%w', o.\"Collected\") = ?")
-        params.append(str(day_of_week))
+        conditions.append(func.strftime("%w", orders_t.c.Collected) == str(day_of_week))
 
-    where_clause = " WHERE " + " AND ".join(conditions)
-
-    query = f"""
-    SELECT 
-        strftime('%H', o."Collected") as collected_hour,
-        cs."Customer Category" as customer_category,
-        COUNT(*) as order_count
-    FROM orders o
-    JOIN customers c ON o."Customer ID" = c."Customer ID" AND o."Store ID" = c."Store ID"
-    JOIN customer_summary cs ON o."Customer ID" = cs."Customer ID" AND o."Store ID" = cs."Store ID"
-    {where_clause}
-    GROUP BY 1, 2
-    """
+    stmt = stmt.where(and_(*conditions)).group_by(
+        literal_column("1"), literal_column("2")
+    )
 
     try:
-        logger.debug(f"Executing query: {query} with params: {params}")
+        logger.debug(f"Executing query: {stmt}")
         start_time = time.perf_counter()
-        with sqlite3.connect(DB_PATH) as conn:
-            df = pd.read_sql_query(query, conn, params=params)
+        engine = sa.create_engine(f"sqlite:///{DB_PATH}")
+        with engine.connect() as conn:
+            df = pd.read_sql_query(stmt, conn)
         end_time = time.perf_counter()
         logger.debug(
             f"Query completed in {end_time - start_time:.4f} seconds. {len(df)} records returned."
@@ -732,31 +981,42 @@ def fetch_customer_intervals(
             columns=["median_days_between_orders", "customer_category", "order_count"]
         )
 
-    query = 'SELECT median_days_between_orders, "Customer Category" AS customer_category, order_count FROM customer_summary'
-    conditions = ["median_days_between_orders IS NOT NULL"]
-    params = []
+    customer_summary = table(
+        "customer_summary",
+        column("median_days_between_orders"),
+        column("Customer Category"),
+        column("order_count"),
+        column("Store Name"),
+        column("account_type"),
+        column("first_order_date"),
+    )
+
+    stmt = select(
+        customer_summary.c.median_days_between_orders,
+        customer_summary.c["Customer Category"].label("customer_category"),
+        customer_summary.c.order_count,
+    )
+
+    conditions = [customer_summary.c.median_days_between_orders.isnot(None)]
 
     if store_name and store_name != "All":
-        conditions.append('"Store Name" = ?')
-        params.append(store_name)
+        conditions.append(customer_summary.c["Store Name"] == store_name)
     if account_filter != "All":
-        conditions.append("account_type = ?")
-        params.append(account_filter)
+        conditions.append(customer_summary.c.account_type == account_filter)
     if start_date:
-        conditions.append("first_order_date >= ?")
-        params.append(start_date)
+        conditions.append(customer_summary.c.first_order_date >= start_date)
     if end_date:
-        conditions.append("first_order_date <= ?")
-        params.append(end_date)
+        conditions.append(customer_summary.c.first_order_date <= end_date)
 
     if conditions:
-        query += " WHERE " + " AND ".join(conditions)
+        stmt = stmt.where(and_(*conditions))
 
     try:
-        logger.debug(f"Executing query: {query} with params: {params}")
+        logger.debug(f"Executing query: {stmt}")
         start_time = time.perf_counter()
-        with sqlite3.connect(DB_PATH) as conn:
-            df = pd.read_sql_query(query, conn, params=params)
+        engine = sa.create_engine(f"sqlite:///{DB_PATH}")
+        with engine.connect() as conn:
+            df = pd.read_sql_query(stmt, conn)
         end_time = time.perf_counter()
         logger.debug(
             f"Query completed in {end_time - start_time:.4f} seconds. {len(df)} records returned."
@@ -778,31 +1038,40 @@ def fetch_customer_ltv(
     if not os.path.exists(DB_PATH):
         return pd.DataFrame(columns=["total_spend", "customer_category"])
 
-    query = 'SELECT total_spend, "Customer Category" AS customer_category FROM customer_summary'
-    conditions = ["total_spend IS NOT NULL"]
-    params = []
+    customer_summary = table(
+        "customer_summary",
+        column("total_spend"),
+        column("Customer Category"),
+        column("Store Name"),
+        column("account_type"),
+        column("first_order_date"),
+    )
+
+    stmt = select(
+        customer_summary.c.total_spend,
+        customer_summary.c["Customer Category"].label("customer_category"),
+    )
+
+    conditions = [customer_summary.c.total_spend.isnot(None)]
 
     if store_name and store_name != "All":
-        conditions.append('"Store Name" = ?')
-        params.append(store_name)
+        conditions.append(customer_summary.c["Store Name"] == store_name)
     if account_filter != "All":
-        conditions.append("account_type = ?")
-        params.append(account_filter)
+        conditions.append(customer_summary.c.account_type == account_filter)
     if start_date:
-        conditions.append("first_order_date >= ?")
-        params.append(start_date)
+        conditions.append(customer_summary.c.first_order_date >= start_date)
     if end_date:
-        conditions.append("first_order_date <= ?")
-        params.append(end_date)
+        conditions.append(customer_summary.c.first_order_date <= end_date)
 
     if conditions:
-        query += " WHERE " + " AND ".join(conditions)
+        stmt = stmt.where(and_(*conditions))
 
     try:
-        logger.debug(f"Executing query: {query} with params: {params}")
+        logger.debug(f"Executing query: {stmt}")
         start_time = time.perf_counter()
-        with sqlite3.connect(DB_PATH) as conn:
-            df = pd.read_sql_query(query, conn, params=params)
+        engine = sa.create_engine(f"sqlite:///{DB_PATH}")
+        with engine.connect() as conn:
+            df = pd.read_sql_query(stmt, conn)
         end_time = time.perf_counter()
         logger.debug(
             f"Query completed in {end_time - start_time:.4f} seconds. {len(df)} records returned."
@@ -820,24 +1089,30 @@ def fetch_unique_items():
     if not os.path.exists(DB_PATH):
         return []
 
-    # Rushes don't count as item count / pieces, but we treat them as 1s here
-    # so that they show up in the plots. If they are zero, then they dont display
-    query = """
-    SELECT 
-        "Item" 
-    FROM 
-        items 
-    WHERE 
-        "Item" IS NOT NULL 
-    GROUP BY "Item" 
-    HAVING SUM(CASE WHEN LOWER("Item") LIKE '%rush%' THEN 1 ELSE "Total Pcs" END) >= 10 
-    ORDER BY "Item"
-    """
+    items_t = table("items", column("Item"), column("Total Pcs"))
+
+    stmt = (
+        select(items_t.c.Item)
+        .where(items_t.c.Item.isnot(None))
+        .group_by(items_t.c.Item)
+        .having(
+            func.sum(
+                case(
+                    (func.lower(items_t.c.Item).like("%rush%"), 1),
+                    else_=items_t.c["Total Pcs"],
+                )
+            )
+            >= 10
+        )
+        .order_by(items_t.c.Item)
+    )
+
     try:
-        logger.debug(f"Executing query: {query}")
+        logger.debug(f"Executing query: {stmt}")
         start_time = time.perf_counter()
-        with sqlite3.connect(DB_PATH) as conn:
-            df = pd.read_sql_query(query, conn)
+        engine = sa.create_engine(f"sqlite:///{DB_PATH}")
+        with engine.connect() as conn:
+            df = pd.read_sql_query(stmt, conn)
         end_time = time.perf_counter()
         logger.debug(
             f"Query completed in {end_time - start_time:.4f} seconds. {len(df)} records returned."
@@ -861,49 +1136,73 @@ def fetch_item_pieces_by_week(
     if not os.path.exists(DB_PATH):
         return pd.DataFrame(columns=["week", "total_pieces", "account_type"])
 
-    # Rushes don't count as item count / pieces, but we treat them as 1s here
-    # so that they show up in the plots. If they are zero, then they dont display
-    query = """
-    SELECT 
-        date(i."Placed") as placed_date,
-        CASE 
-            WHEN c."Business ID" IS NULL OR c."Business ID" = '' THEN 'Retail' 
-            ELSE 'Commercial' 
-        END as account_type,
-        SUM(
-            CASE WHEN LOWER(i."Item") LIKE '%rush%' THEN 1 ELSE i."Total Pcs" END
-        ) as total_pieces
-    FROM items i
-    JOIN orders o ON i."Order ID" = o."Order ID" AND i."Store ID" = o."Store ID"
-    JOIN customers c ON i."Customer ID" = c."Customer ID" AND i."Store ID" = c."Store ID"
-    WHERE i."Placed" IS NOT NULL
-    """
-    params = []
+    items_t = table(
+        "items",
+        column("Placed"),
+        column("Item"),
+        column("Total Pcs"),
+        column("Order ID"),
+        column("Store ID"),
+        column("Customer ID"),
+    )
+    orders_t = table(
+        "orders", column("Order ID"), column("Store ID"), column("Store Name")
+    )
+    customers_t = table(
+        "customers", column("Customer ID"), column("Store ID"), column("Business ID")
+    )
+
+    placed_date = func.date(items_t.c.Placed).label("placed_date")
+    account_type = case(
+        (customers_t.c["Business ID"].is_(None), "Retail"),
+        (customers_t.c["Business ID"] == "", "Retail"),
+        else_="Commercial",
+    ).label("account_type")
+    total_pieces = func.sum(
+        case(
+            (func.lower(items_t.c.Item).like("%rush%"), 1), else_=items_t.c["Total Pcs"]
+        )
+    ).label("total_pieces")
+
+    stmt = select(placed_date, account_type, total_pieces).select_from(
+        items_t.join(
+            orders_t,
+            and_(
+                items_t.c["Order ID"] == orders_t.c["Order ID"],
+                items_t.c["Store ID"] == orders_t.c["Store ID"],
+            ),
+        ).join(
+            customers_t,
+            and_(
+                items_t.c["Customer ID"] == customers_t.c["Customer ID"],
+                items_t.c["Store ID"] == customers_t.c["Store ID"],
+            ),
+        )
+    )
+
+    conditions = [items_t.c.Placed.isnot(None)]
 
     if store_name and store_name != "All":
-        query += ' AND o."Store Name" = ?'
-        params.append(store_name)
+        conditions.append(orders_t.c["Store Name"] == store_name)
     if start_date:
-        query += ' AND i."Placed" >= ?'
-        params.append(start_date)
+        conditions.append(items_t.c.Placed >= start_date)
     if end_date:
-        query += ' AND i."Placed" <= ?'
-        params.append(end_date)
+        conditions.append(items_t.c.Placed <= end_date)
     if account_filter != "All":
-        query += """ AND (CASE WHEN c."Business ID" IS NULL OR c."Business ID" = '' THEN 'Retail' ELSE 'Commercial' END) = ?"""
-        params.append(account_filter)
+        conditions.append(account_type == account_filter)
     if selected_items:
-        placeholders = ",".join(["?"] * len(selected_items))
-        query += f' AND i."Item" IN ({placeholders})'
-        params.extend(selected_items)
+        conditions.append(items_t.c.Item.in_(selected_items))
 
-    query += " GROUP BY placed_date, account_type"
+    stmt = stmt.where(and_(*conditions)).group_by(
+        literal_column("placed_date"), literal_column("account_type")
+    )
 
     try:
-        logger.debug(f"Executing query: {query} with params: {params}")
+        logger.debug(f"Executing query: {stmt}")
         start_time = time.perf_counter()
-        with sqlite3.connect(DB_PATH) as conn:
-            df = pd.read_sql_query(query, conn, params=params)
+        engine = sa.create_engine(f"sqlite:///{DB_PATH}")
+        with engine.connect() as conn:
+            df = pd.read_sql_query(stmt, conn)
         end_time = time.perf_counter()
         logger.debug(
             f"Query completed in {end_time - start_time:.4f} seconds. {len(df)} records returned."
@@ -937,34 +1236,56 @@ def fetch_total_order_count(
     if not os.path.exists(DB_PATH):
         return 0
 
-    query = """
-    SELECT COUNT(DISTINCT o."Order ID")
-    FROM orders o
-    JOIN customers c ON o."Customer ID" = c."Customer ID" AND o."Store ID" = c."Store ID"
-    WHERE o."Placed" IS NOT NULL
-    """
-    params = []
+    orders_t = table(
+        "orders",
+        column("Order ID"),
+        column("Placed"),
+        column("Store Name"),
+        column("Customer ID"),
+        column("Store ID"),
+    )
+    customers_t = table(
+        "customers", column("Customer ID"), column("Store ID"), column("Business ID")
+    )
+
+    stmt = select(
+        func.count(func.distinct(orders_t.c["Order ID"])).label("count")
+    ).select_from(
+        orders_t.join(
+            customers_t,
+            and_(
+                orders_t.c["Customer ID"] == customers_t.c["Customer ID"],
+                orders_t.c["Store ID"] == customers_t.c["Store ID"],
+            ),
+        )
+    )
+
+    conditions = [orders_t.c.Placed.isnot(None)]
 
     if store_name and store_name != "All":
-        query += ' AND o."Store Name" = ?'
-        params.append(store_name)
+        conditions.append(orders_t.c["Store Name"] == store_name)
     if start_date:
-        query += ' AND o."Placed" >= ?'
-        params.append(start_date)
+        conditions.append(orders_t.c.Placed >= start_date)
     if end_date:
-        query += ' AND o."Placed" <= ?'
-        params.append(end_date)
+        conditions.append(orders_t.c.Placed <= end_date)
     if account_filter != "All":
-        query += """ AND (CASE WHEN c."Business ID" IS NULL OR c."Business ID" = '' THEN 'Retail' ELSE 'Commercial' END) = ?"""
-        params.append(account_filter)
+        conditions.append(
+            case(
+                (customers_t.c["Business ID"].is_(None), "Retail"),
+                (customers_t.c["Business ID"] == "", "Retail"),
+                else_="Commercial",
+            )
+            == account_filter
+        )
+
+    stmt = stmt.where(and_(*conditions))
 
     try:
-        logger.debug(f"Executing query: {query} with params: {params}")
+        logger.debug(f"Executing query: {stmt}")
         start_time = time.perf_counter()
-        with sqlite3.connect(DB_PATH) as conn:
-            cursor = conn.cursor()
-            cursor.execute(query, params)
-            result = cursor.fetchone()[0]
+        engine = sa.create_engine(f"sqlite:///{DB_PATH}")
+        with engine.connect() as conn:
+            result = conn.execute(stmt).scalar()
         end_time = time.perf_counter()
         logger.debug(
             f"Query completed in {end_time - start_time:.4f} seconds. Result: {result} orders."
@@ -984,38 +1305,71 @@ def fetch_top_items(
     if not os.path.exists(DB_PATH):
         return pd.DataFrame(columns=["Item", "order_count"])
 
-    query = """
-    SELECT 
-        i."Item",
-        COUNT(DISTINCT i."Order ID") as order_count
-    FROM items i
-    JOIN orders o ON i."Order ID" = o."Order ID" AND i."Store ID" = o."Store ID"
-    JOIN customers c ON i."Customer ID" = c."Customer ID" AND i."Store ID" = c."Store ID"
-    WHERE i."Placed" IS NOT NULL AND i."Item" IS NOT NULL
-    """
-    params = []
+    items_t = table(
+        "items",
+        column("Item"),
+        column("Order ID"),
+        column("Store ID"),
+        column("Customer ID"),
+        column("Placed"),
+    )
+    orders_t = table(
+        "orders", column("Order ID"), column("Store ID"), column("Store Name")
+    )
+    customers_t = table(
+        "customers", column("Customer ID"), column("Store ID"), column("Business ID")
+    )
+
+    stmt = select(
+        items_t.c.Item,
+        func.count(func.distinct(items_t.c["Order ID"])).label("order_count"),
+    ).select_from(
+        items_t.join(
+            orders_t,
+            and_(
+                items_t.c["Order ID"] == orders_t.c["Order ID"],
+                items_t.c["Store ID"] == orders_t.c["Store ID"],
+            ),
+        ).join(
+            customers_t,
+            and_(
+                items_t.c["Customer ID"] == customers_t.c["Customer ID"],
+                items_t.c["Store ID"] == customers_t.c["Store ID"],
+            ),
+        )
+    )
+
+    conditions = [items_t.c.Placed.isnot(None), items_t.c.Item.isnot(None)]
 
     if store_name and store_name != "All":
-        query += ' AND o."Store Name" = ?'
-        params.append(store_name)
+        conditions.append(orders_t.c["Store Name"] == store_name)
     if start_date:
-        query += ' AND i."Placed" >= ?'
-        params.append(start_date)
+        conditions.append(items_t.c.Placed >= start_date)
     if end_date:
-        query += ' AND i."Placed" <= ?'
-        params.append(end_date)
+        conditions.append(items_t.c.Placed <= end_date)
     if account_filter != "All":
-        query += """ AND (CASE WHEN c."Business ID" IS NULL OR c."Business ID" = '' THEN 'Retail' ELSE 'Commercial' END) = ?"""
-        params.append(account_filter)
+        conditions.append(
+            case(
+                (customers_t.c["Business ID"].is_(None), "Retail"),
+                (customers_t.c["Business ID"] == "", "Retail"),
+                else_="Commercial",
+            )
+            == account_filter
+        )
 
-    query += ' GROUP BY i."Item" ORDER BY order_count DESC LIMIT ?'
-    params.append(limit)
+    stmt = (
+        stmt.where(and_(*conditions))
+        .group_by(items_t.c.Item)
+        .order_by(desc("order_count"))
+        .limit(limit)
+    )
 
     try:
-        logger.debug(f"Executing query: {query} with params: {params}")
+        logger.debug(f"Executing query: {stmt}")
         start_time = time.perf_counter()
-        with sqlite3.connect(DB_PATH) as conn:
-            df = pd.read_sql_query(query, conn, params=params)
+        engine = sa.create_engine(f"sqlite:///{DB_PATH}")
+        with engine.connect() as conn:
+            df = pd.read_sql_query(stmt, conn)
         end_time = time.perf_counter()
         logger.debug(
             f"Query completed in {end_time - start_time:.4f} seconds. {len(df)} records returned."
@@ -1035,39 +1389,88 @@ def fetch_top_item_pairs(
     if not os.path.exists(DB_PATH):
         return pd.DataFrame(columns=["item_pair", "pair_count"])
 
-    query = """
-    SELECT 
-        i1."Item" || ' + ' || i2."Item" as item_pair,
-        COUNT(DISTINCT i1."Order ID") as pair_count
-    FROM items i1
-    JOIN items i2 ON i1."Order ID" = i2."Order ID" AND i1."Store ID" = i2."Store ID" AND i1."Item" < i2."Item"
-    JOIN orders o ON i1."Order ID" = o."Order ID" AND i1."Store ID" = o."Store ID"
-    JOIN customers c ON i1."Customer ID" = c."Customer ID" AND i1."Store ID" = c."Store ID"
-    WHERE i1."Placed" IS NOT NULL AND i1."Item" IS NOT NULL AND i2."Item" IS NOT NULL
-    """
-    params = []
+    items_t1 = table(
+        "items",
+        column("Item"),
+        column("Order ID"),
+        column("Store ID"),
+        column("Customer ID"),
+        column("Placed"),
+    )
+    items_t2 = table("items", column("Item"), column("Order ID"), column("Store ID"))
+
+    orders_t = table(
+        "orders", column("Order ID"), column("Store ID"), column("Store Name")
+    )
+    customers_t = table(
+        "customers", column("Customer ID"), column("Store ID"), column("Business ID")
+    )
+
+    item_pair = (items_t1.c.Item + " + " + items_t2.c.Item).label("item_pair")
+
+    stmt = select(
+        item_pair,
+        func.count(func.distinct(items_t1.c["Order ID"])).label("pair_count"),
+    ).select_from(
+        items_t1.join(
+            items_t2,
+            and_(
+                items_t1.c["Order ID"] == items_t2.c["Order ID"],
+                items_t1.c["Store ID"] == items_t2.c["Store ID"],
+                items_t1.c.Item < items_t2.c.Item,
+            ),
+        )
+        .join(
+            orders_t,
+            and_(
+                items_t1.c["Order ID"] == orders_t.c["Order ID"],
+                items_t1.c["Store ID"] == orders_t.c["Store ID"],
+            ),
+        )
+        .join(
+            customers_t,
+            and_(
+                items_t1.c["Customer ID"] == customers_t.c["Customer ID"],
+                items_t1.c["Store ID"] == customers_t.c["Store ID"],
+            ),
+        )
+    )
+
+    conditions = [
+        items_t1.c.Placed.isnot(None),
+        items_t1.c.Item.isnot(None),
+        items_t2.c.Item.isnot(None),
+    ]
 
     if store_name and store_name != "All":
-        query += ' AND o."Store Name" = ?'
-        params.append(store_name)
+        conditions.append(orders_t.c["Store Name"] == store_name)
     if start_date:
-        query += ' AND i1."Placed" >= ?'
-        params.append(start_date)
+        conditions.append(items_t1.c.Placed >= start_date)
     if end_date:
-        query += ' AND i1."Placed" <= ?'
-        params.append(end_date)
+        conditions.append(items_t1.c.Placed <= end_date)
     if account_filter != "All":
-        query += """ AND (CASE WHEN c."Business ID" IS NULL OR c."Business ID" = '' THEN 'Retail' ELSE 'Commercial' END) = ?"""
-        params.append(account_filter)
+        conditions.append(
+            case(
+                (customers_t.c["Business ID"].is_(None), "Retail"),
+                (customers_t.c["Business ID"] == "", "Retail"),
+                else_="Commercial",
+            )
+            == account_filter
+        )
 
-    query += ' GROUP BY i1."Item", i2."Item" ORDER BY pair_count DESC LIMIT ?'
-    params.append(limit)
+    stmt = (
+        stmt.where(and_(*conditions))
+        .group_by(items_t1.c.Item, items_t2.c.Item)
+        .order_by(desc("pair_count"))
+        .limit(limit)
+    )
 
     try:
-        logger.debug(f"Executing query: {query} with params: {params}")
+        logger.debug(f"Executing query: {stmt}")
         start_time = time.perf_counter()
-        with sqlite3.connect(DB_PATH) as conn:
-            df = pd.read_sql_query(query, conn, params=params)
+        engine = sa.create_engine(f"sqlite:///{DB_PATH}")
+        with engine.connect() as conn:
+            df = pd.read_sql_query(stmt, conn)
         end_time = time.perf_counter()
         logger.debug(
             f"Query completed in {end_time - start_time:.4f} seconds. {len(df)} records returned."

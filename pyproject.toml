@@ -13,4 +13,5 @@ dependencies = [
     "mlxtend",
     "pandas",
     "plotly",
+    "SQLAlchemy",
 ]
