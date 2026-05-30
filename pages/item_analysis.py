@@ -106,7 +106,7 @@ def update_items(
             template="plotly_dark",
         )
         fig_top_items.update_layout(
-            yaxis={"categoryorder": "total ascending"},
+            yaxis={"categoryorder": "total ascending", "dtick": 1},
             plot_bgcolor="#111111",
             paper_bgcolor="#111111",
             font_color="#7FDBFF",
@@ -131,7 +131,7 @@ def update_items(
             template="plotly_dark",
         )
         fig_top_pairs.update_layout(
-            yaxis={"categoryorder": "total ascending"},
+            yaxis={"categoryorder": "total ascending", "dtick": 1},
             plot_bgcolor="#111111",
             paper_bgcolor="#111111",
             font_color="#7FDBFF",
