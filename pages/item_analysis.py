@@ -30,16 +30,20 @@ layout = html.Div(
                     ],
                     style={"width": "20%", "paddingRight": "20px"},
                 ),
-                html.Div(id="items-content", style={"width": "80%"}),
+                html.Div(id="items-top-content", style={"width": "80%"}),
             ],
             style={"display": "flex", "marginTop": "20px"},
-        )
+        ),
+        html.Div(id="items-bottom-content", style={"marginTop": "20px"}),
     ]
 )
 
 
 @callback(
-    Output("items-content", "children"),
+    [
+        Output("items-top-content", "children"),
+        Output("items-bottom-content", "children"),
+    ],
     [
         Input("store-id-dropdown", "value"),
         Input("date-range-picker", "start_date"),
@@ -144,25 +148,16 @@ def update_items(
             plot_bgcolor="#111111", paper_bgcolor="#111111", font_color="#7FDBFF"
         )
 
-    return html.Div(
+    return dcc.Graph(id="items-pieces-line-chart", figure=fig_pieces), html.Div(
         [
-            dcc.Graph(id="items-pieces-line-chart", figure=fig_pieces),
             html.Div(
-                [
-                    html.Div(
-                        [dcc.Graph(id="top-items-bar-chart", figure=fig_top_items)],
-                        style={"width": "50%", "display": "inline-block"},
-                    ),
-                    html.Div(
-                        [
-                            dcc.Graph(
-                                id="top-item-pairs-bar-chart", figure=fig_top_pairs
-                            )
-                        ],
-                        style={"width": "50%", "display": "inline-block"},
-                    ),
-                ],
-                style={"display": "flex", "marginTop": "20px"},
+                [dcc.Graph(id="top-items-bar-chart", figure=fig_top_items)],
+                style={"width": "50%", "display": "inline-block"},
             ),
-        ]
+            html.Div(
+                [dcc.Graph(id="top-item-pairs-bar-chart", figure=fig_top_pairs)],
+                style={"width": "50%", "display": "inline-block"},
+            ),
+        ],
+        style={"display": "flex"},
     )
