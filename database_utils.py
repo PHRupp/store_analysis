@@ -23,6 +23,30 @@ DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), DB_NAME)
 logger = logging.getLogger(__name__)
 
 
+def build_common_conditions(
+    conditions,
+    store_name=None,
+    store_col=None,
+    start_date=None,
+    date_col=None,
+    end_date=None,
+    account_filter="All",
+    account_col=None,
+):
+    """
+    Appends store name, date range, and account filter conditions to a given list of conditions.
+    """
+    if store_name and store_name != "All" and store_col is not None:
+        conditions.append(store_col == store_name)
+    if start_date and date_col is not None:
+        conditions.append(date_col >= start_date)
+    if end_date and date_col is not None:
+        conditions.append(date_col <= end_date)
+    if account_filter and account_filter != "All" and account_col is not None:
+        conditions.append(account_col == account_filter)
+    return conditions
+
+
 def execute_query(stmt, is_scalar=False):
     """
     Executes an SQLAlchemy statement, handles logging, and returns the result.
@@ -90,15 +114,16 @@ def fetch_customer_stats(
         func.sum(customer_summary.c.total_spend).label("total_spend"),
     )
 
-    conditions = []
-    if store_name and store_name != "All":
-        conditions.append(customer_summary.c["Store Name"] == store_name)
-    if account_filter != "All":
-        conditions.append(customer_summary.c.account_type == account_filter)
-    if start_date:
-        conditions.append(customer_summary.c.first_order_date >= start_date)
-    if end_date:
-        conditions.append(customer_summary.c.first_order_date <= end_date)
+    conditions = build_common_conditions(
+        [],
+        store_name=store_name,
+        store_col=customer_summary.c["Store Name"],
+        start_date=start_date,
+        date_col=customer_summary.c.first_order_date,
+        end_date=end_date,
+        account_filter=account_filter,
+        account_col=customer_summary.c.account_type,
+    )
 
     if conditions:
         stmt = stmt.where(and_(*conditions))
@@ -156,11 +181,13 @@ def fetch_top_customers(store_name=None, account_filter="All", limit=50):
         customer_summary.c.median_days_between_orders,
     )
 
-    conditions = []
-    if store_name and store_name != "All":
-        conditions.append(customer_summary.c["Store Name"] == store_name)
-    if account_filter != "All":
-        conditions.append(customer_summary.c.account_type == account_filter)
+    conditions = build_common_conditions(
+        [],
+        store_name=store_name,
+        store_col=customer_summary.c["Store Name"],
+        account_filter=account_filter,
+        account_col=customer_summary.c.account_type,
+    )
 
     if conditions:
         stmt = stmt.where(and_(*conditions))
@@ -240,14 +267,16 @@ def fetch_overdue_customers(
         days_past_expected < 360,
         customer_summary.c.order_count > 10,
     ]
-    if store_name and store_name != "All":
-        conditions.append(customer_summary.c["Store Name"] == store_name)
-    if account_filter != "All":
-        conditions.append(customer_summary.c.account_type == account_filter)
-    if start_date:
-        conditions.append(customer_summary.c.first_order_date >= start_date)
-    if end_date:
-        conditions.append(customer_summary.c.first_order_date <= end_date)
+    conditions = build_common_conditions(
+        conditions,
+        store_name=store_name,
+        store_col=customer_summary.c["Store Name"],
+        start_date=start_date,
+        date_col=customer_summary.c.first_order_date,
+        end_date=end_date,
+        account_filter=account_filter,
+        account_col=customer_summary.c.account_type,
+    )
 
     stmt = stmt.where(and_(*conditions)).order_by(desc(days_past_expected)).limit(limit)
 
@@ -307,15 +336,16 @@ def fetch_new_customers_trend(
         ),
     )
 
-    conditions = []
-    if store_name and store_name != "All":
-        conditions.append(customer_summary.c["Store Name"] == store_name)
-    if account_filter != "All":
-        conditions.append(customer_summary.c.account_type == account_filter)
-    if start_date:
-        conditions.append(customer_summary.c.first_order_date >= start_date)
-    if end_date:
-        conditions.append(customer_summary.c.first_order_date <= end_date)
+    conditions = build_common_conditions(
+        [],
+        store_name=store_name,
+        store_col=customer_summary.c["Store Name"],
+        start_date=start_date,
+        date_col=customer_summary.c.first_order_date,
+        end_date=end_date,
+        account_filter=account_filter,
+        account_col=customer_summary.c.account_type,
+    )
 
     if conditions:
         stmt = stmt.where(and_(*conditions))
@@ -372,15 +402,16 @@ def fetch_last_order_trend(
         func.count(customer_summary.c["Customer ID"]).label("last_order_count"),
     )
 
-    conditions = []
-    if store_name and store_name != "All":
-        conditions.append(customer_summary.c["Store Name"] == store_name)
-    if account_filter != "All":
-        conditions.append(customer_summary.c.account_type == account_filter)
-    if start_date:
-        conditions.append(customer_summary.c.last_order_date >= start_date)
-    if end_date:
-        conditions.append(customer_summary.c.last_order_date <= end_date)
+    conditions = build_common_conditions(
+        [],
+        store_name=store_name,
+        store_col=customer_summary.c["Store Name"],
+        start_date=start_date,
+        date_col=customer_summary.c.last_order_date,
+        end_date=end_date,
+        account_filter=account_filter,
+        account_col=customer_summary.c.account_type,
+    )
     if min_lapsed_days is not None:
         conditions.append(customer_summary.c["days since last order"] > min_lapsed_days)
 
@@ -447,15 +478,16 @@ def fetch_monthly_revenue(
     )
 
     conditions = [orders_t.c.Placed.isnot(None)]
-
-    if store_name and store_name != "All":
-        conditions.append(orders_t.c["Store Name"] == store_name)
-    if start_date:
-        conditions.append(orders_t.c.Placed >= start_date)
-    if end_date:
-        conditions.append(orders_t.c.Placed <= end_date)
-    if account_filter != "All":
-        conditions.append(account_type == account_filter)
+    conditions = build_common_conditions(
+        conditions,
+        store_name=store_name,
+        store_col=orders_t.c["Store Name"],
+        start_date=start_date,
+        date_col=orders_t.c.Placed,
+        end_date=end_date,
+        account_filter=account_filter,
+        account_col=account_type,
+    )
 
     stmt = (
         stmt.where(and_(*conditions))
@@ -517,22 +549,20 @@ def fetch_order_trends(
     )
 
     conditions = [orders_t.c.Placed.isnot(None)]
-
-    if store_name and store_name != "All":
-        conditions.append(orders_t.c["Store Name"] == store_name)
-    if start_date:
-        conditions.append(orders_t.c.Placed >= start_date)
-    if end_date:
-        conditions.append(orders_t.c.Placed <= end_date)
-    if account_filter != "All":
-        conditions.append(
-            case(
-                (customers_t.c["Business ID"].is_(None), "Retail"),
-                (customers_t.c["Business ID"] == "", "Retail"),
-                else_="Commercial",
-            )
-            == account_filter
-        )
+    conditions = build_common_conditions(
+        conditions,
+        store_name=store_name,
+        store_col=orders_t.c["Store Name"],
+        start_date=start_date,
+        date_col=orders_t.c.Placed,
+        end_date=end_date,
+        account_filter=account_filter,
+        account_col=case(
+            (customers_t.c["Business ID"].is_(None), "Retail"),
+            (customers_t.c["Business ID"] == "", "Retail"),
+            else_="Commercial",
+        ),
+    )
 
     raw_data = raw_data.where(and_(*conditions)).cte("RawData")
 
@@ -605,22 +635,20 @@ def fetch_category_order_trends(
     )
 
     conditions = [orders_t.c.Placed.isnot(None)]
-
-    if store_name and store_name != "All":
-        conditions.append(orders_t.c["Store Name"] == store_name)
-    if start_date:
-        conditions.append(orders_t.c.Placed >= start_date)
-    if end_date:
-        conditions.append(orders_t.c.Placed <= end_date)
-    if account_filter != "All":
-        conditions.append(
-            case(
-                (customers_t.c["Business ID"].is_(None), "Retail"),
-                (customers_t.c["Business ID"] == "", "Retail"),
-                else_="Commercial",
-            )
-            == account_filter
-        )
+    conditions = build_common_conditions(
+        conditions,
+        store_name=store_name,
+        store_col=orders_t.c["Store Name"],
+        start_date=start_date,
+        date_col=orders_t.c.Placed,
+        end_date=end_date,
+        account_filter=account_filter,
+        account_col=case(
+            (customers_t.c["Business ID"].is_(None), "Retail"),
+            (customers_t.c["Business ID"] == "", "Retail"),
+            else_="Commercial",
+        ),
+    )
 
     stmt = (
         stmt.where(and_(*conditions))
@@ -682,22 +710,20 @@ def fetch_order_totals(
     )
 
     conditions = [orders_t.c.Placed.isnot(None)]
-
-    if store_name and store_name != "All":
-        conditions.append(orders_t.c["Store Name"] == store_name)
-    if start_date:
-        conditions.append(orders_t.c.Placed >= start_date)
-    if end_date:
-        conditions.append(orders_t.c.Placed <= end_date)
-    if account_filter != "All":
-        conditions.append(
-            case(
-                (customers_t.c["Business ID"].is_(None), "Retail"),
-                (customers_t.c["Business ID"] == "", "Retail"),
-                else_="Commercial",
-            )
-            == account_filter
-        )
+    conditions = build_common_conditions(
+        conditions,
+        store_name=store_name,
+        store_col=orders_t.c["Store Name"],
+        start_date=start_date,
+        date_col=orders_t.c.Placed,
+        end_date=end_date,
+        account_filter=account_filter,
+        account_col=case(
+            (customers_t.c["Business ID"].is_(None), "Retail"),
+            (customers_t.c["Business ID"] == "", "Retail"),
+            else_="Commercial",
+        ),
+    )
 
     stmt = stmt.where(and_(*conditions))
 
@@ -764,22 +790,20 @@ def fetch_daytime_data(
         orders_t.c.Placed.isnot(None),
         cast(func.strftime("%H", orders_t.c.Placed), sa.Integer).between(7, 19),
     ]
-
-    if store_name and store_name != "All":
-        conditions.append(orders_t.c["Store Name"] == store_name)
-    if start_date:
-        conditions.append(orders_t.c.Placed >= start_date)
-    if end_date:
-        conditions.append(orders_t.c.Placed <= end_date)
-    if account_filter != "All":
-        conditions.append(
-            case(
-                (customers_t.c["Business ID"].is_(None), "Retail"),
-                (customers_t.c["Business ID"] == "", "Retail"),
-                else_="Commercial",
-            )
-            == account_filter
-        )
+    conditions = build_common_conditions(
+        conditions,
+        store_name=store_name,
+        store_col=orders_t.c["Store Name"],
+        start_date=start_date,
+        date_col=orders_t.c.Placed,
+        end_date=end_date,
+        account_filter=account_filter,
+        account_col=case(
+            (customers_t.c["Business ID"].is_(None), "Retail"),
+            (customers_t.c["Business ID"] == "", "Retail"),
+            else_="Commercial",
+        ),
+    )
 
     if day_of_week and day_of_week != "All":
         conditions.append(func.strftime("%w", orders_t.c.Placed) == str(day_of_week))
@@ -854,22 +878,20 @@ def fetch_collection_data(
         orders_t.c.Collected.isnot(None),
         cast(func.strftime("%H", orders_t.c.Collected), sa.Integer).between(7, 19),
     ]
-
-    if store_name and store_name != "All":
-        conditions.append(orders_t.c["Store Name"] == store_name)
-    if start_date:
-        conditions.append(orders_t.c.Placed >= start_date)
-    if end_date:
-        conditions.append(orders_t.c.Placed <= end_date)
-    if account_filter != "All":
-        conditions.append(
-            case(
-                (customers_t.c["Business ID"].is_(None), "Retail"),
-                (customers_t.c["Business ID"] == "", "Retail"),
-                else_="Commercial",
-            )
-            == account_filter
-        )
+    conditions = build_common_conditions(
+        conditions,
+        store_name=store_name,
+        store_col=orders_t.c["Store Name"],
+        start_date=start_date,
+        date_col=orders_t.c.Placed,
+        end_date=end_date,
+        account_filter=account_filter,
+        account_col=case(
+            (customers_t.c["Business ID"].is_(None), "Retail"),
+            (customers_t.c["Business ID"] == "", "Retail"),
+            else_="Commercial",
+        ),
+    )
 
     if day_of_week and day_of_week != "All":
         conditions.append(func.strftime("%w", orders_t.c.Collected) == str(day_of_week))
@@ -915,15 +937,16 @@ def fetch_customer_intervals(
     )
 
     conditions = [customer_summary.c.median_days_between_orders.isnot(None)]
-
-    if store_name and store_name != "All":
-        conditions.append(customer_summary.c["Store Name"] == store_name)
-    if account_filter != "All":
-        conditions.append(customer_summary.c.account_type == account_filter)
-    if start_date:
-        conditions.append(customer_summary.c.first_order_date >= start_date)
-    if end_date:
-        conditions.append(customer_summary.c.first_order_date <= end_date)
+    conditions = build_common_conditions(
+        conditions,
+        store_name=store_name,
+        store_col=customer_summary.c["Store Name"],
+        start_date=start_date,
+        date_col=customer_summary.c.first_order_date,
+        end_date=end_date,
+        account_filter=account_filter,
+        account_col=customer_summary.c.account_type,
+    )
 
     if conditions:
         stmt = stmt.where(and_(*conditions))
@@ -961,15 +984,16 @@ def fetch_customer_ltv(
     )
 
     conditions = [customer_summary.c.total_spend.isnot(None)]
-
-    if store_name and store_name != "All":
-        conditions.append(customer_summary.c["Store Name"] == store_name)
-    if account_filter != "All":
-        conditions.append(customer_summary.c.account_type == account_filter)
-    if start_date:
-        conditions.append(customer_summary.c.first_order_date >= start_date)
-    if end_date:
-        conditions.append(customer_summary.c.first_order_date <= end_date)
+    conditions = build_common_conditions(
+        conditions,
+        store_name=store_name,
+        store_col=customer_summary.c["Store Name"],
+        start_date=start_date,
+        date_col=customer_summary.c.first_order_date,
+        end_date=end_date,
+        account_filter=account_filter,
+        account_col=customer_summary.c.account_type,
+    )
 
     if conditions:
         stmt = stmt.where(and_(*conditions))
@@ -1072,15 +1096,16 @@ def fetch_item_pieces_by_week(
     )
 
     conditions = [items_t.c.Placed.isnot(None)]
-
-    if store_name and store_name != "All":
-        conditions.append(orders_t.c["Store Name"] == store_name)
-    if start_date:
-        conditions.append(items_t.c.Placed >= start_date)
-    if end_date:
-        conditions.append(items_t.c.Placed <= end_date)
-    if account_filter != "All":
-        conditions.append(account_type == account_filter)
+    conditions = build_common_conditions(
+        conditions,
+        store_name=store_name,
+        store_col=orders_t.c["Store Name"],
+        start_date=start_date,
+        date_col=items_t.c.Placed,
+        end_date=end_date,
+        account_filter=account_filter,
+        account_col=account_type,
+    )
     if selected_items:
         conditions.append(items_t.c.Item.in_(selected_items))
 
@@ -1144,22 +1169,20 @@ def fetch_total_order_count(
     )
 
     conditions = [orders_t.c.Placed.isnot(None)]
-
-    if store_name and store_name != "All":
-        conditions.append(orders_t.c["Store Name"] == store_name)
-    if start_date:
-        conditions.append(orders_t.c.Placed >= start_date)
-    if end_date:
-        conditions.append(orders_t.c.Placed <= end_date)
-    if account_filter != "All":
-        conditions.append(
-            case(
-                (customers_t.c["Business ID"].is_(None), "Retail"),
-                (customers_t.c["Business ID"] == "", "Retail"),
-                else_="Commercial",
-            )
-            == account_filter
-        )
+    conditions = build_common_conditions(
+        conditions,
+        store_name=store_name,
+        store_col=orders_t.c["Store Name"],
+        start_date=start_date,
+        date_col=orders_t.c.Placed,
+        end_date=end_date,
+        account_filter=account_filter,
+        account_col=case(
+            (customers_t.c["Business ID"].is_(None), "Retail"),
+            (customers_t.c["Business ID"] == "", "Retail"),
+            else_="Commercial",
+        ),
+    )
 
     stmt = stmt.where(and_(*conditions))
 
@@ -1214,22 +1237,20 @@ def fetch_top_items(
     )
 
     conditions = [items_t.c.Placed.isnot(None), items_t.c.Item.isnot(None)]
-
-    if store_name and store_name != "All":
-        conditions.append(orders_t.c["Store Name"] == store_name)
-    if start_date:
-        conditions.append(items_t.c.Placed >= start_date)
-    if end_date:
-        conditions.append(items_t.c.Placed <= end_date)
-    if account_filter != "All":
-        conditions.append(
-            case(
-                (customers_t.c["Business ID"].is_(None), "Retail"),
-                (customers_t.c["Business ID"] == "", "Retail"),
-                else_="Commercial",
-            )
-            == account_filter
-        )
+    conditions = build_common_conditions(
+        conditions,
+        store_name=store_name,
+        store_col=orders_t.c["Store Name"],
+        start_date=start_date,
+        date_col=items_t.c.Placed,
+        end_date=end_date,
+        account_filter=account_filter,
+        account_col=case(
+            (customers_t.c["Business ID"].is_(None), "Retail"),
+            (customers_t.c["Business ID"] == "", "Retail"),
+            else_="Commercial",
+        ),
+    )
 
     stmt = (
         stmt.where(and_(*conditions))
@@ -1306,22 +1327,20 @@ def fetch_top_item_pairs(
         items_t1.c.Item.isnot(None),
         items_t2.c.Item.isnot(None),
     ]
-
-    if store_name and store_name != "All":
-        conditions.append(orders_t.c["Store Name"] == store_name)
-    if start_date:
-        conditions.append(items_t1.c.Placed >= start_date)
-    if end_date:
-        conditions.append(items_t1.c.Placed <= end_date)
-    if account_filter != "All":
-        conditions.append(
-            case(
-                (customers_t.c["Business ID"].is_(None), "Retail"),
-                (customers_t.c["Business ID"] == "", "Retail"),
-                else_="Commercial",
-            )
-            == account_filter
-        )
+    conditions = build_common_conditions(
+        conditions,
+        store_name=store_name,
+        store_col=orders_t.c["Store Name"],
+        start_date=start_date,
+        date_col=items_t1.c.Placed,
+        end_date=end_date,
+        account_filter=account_filter,
+        account_col=case(
+            (customers_t.c["Business ID"].is_(None), "Retail"),
+            (customers_t.c["Business ID"] == "", "Retail"),
+            else_="Commercial",
+        ),
+    )
 
     stmt = (
         stmt.where(and_(*conditions))
