@@ -3,6 +3,7 @@ from dash import dcc, html, Input, Output, callback
 import plotly.express as px
 import plotly.graph_objects as go
 import pandas as pd
+from typing import Any
 from database_utils import (
     fetch_customer_stats,
     fetch_top_customers,
@@ -38,7 +39,12 @@ layout = html.Div([html.Div(id="customers-content")])
         Input("date-range-picker", "end_date"),
     ],
 )
-def update_customers(selected_store, account_filter, start_date, end_date):
+def update_customers(
+    selected_store: str,
+    account_filter: str,
+    start_date: str,
+    end_date: str,
+) -> Any:
     df_cust = fetch_customer_stats(selected_store, account_filter, start_date, end_date)
     df_top = fetch_top_customers(selected_store, account_filter)
     df_overdue = fetch_overdue_customers(

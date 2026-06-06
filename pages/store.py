@@ -3,6 +3,7 @@ from dash import dcc, html, Input, Output, callback
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
+from typing import Any, Optional
 from database_utils import (
     fetch_monthly_revenue,
     fetch_order_trends,
@@ -120,8 +121,12 @@ layout = html.Div(
     ],
 )
 def update_store(
-    selected_store_name, start_date, end_date, account_filter, min_lapsed_days
-):
+    selected_store_name: str,
+    start_date: str,
+    end_date: str,
+    account_filter: str,
+    min_lapsed_days: Optional[int],
+) -> Any:
     df_revenue = fetch_monthly_revenue(
         selected_store_name, start_date, end_date, account_filter
     )

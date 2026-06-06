@@ -2,6 +2,7 @@ import dash
 from dash import dcc, html, Input, Output, callback
 import pandas as pd
 import plotly.express as px
+from typing import Any
 from database_utils import fetch_daytime_data, fetch_collection_data, fetch_order_totals
 
 dash.register_page(__name__, path="/orders", name="Orders Analysis", order=4)
@@ -31,7 +32,12 @@ layout = html.Div([html.Div(id="orders-content")])
         Input("account-type-dropdown", "value"),
     ],
 )
-def update_orders(selected_store_name, start_date, end_date, account_filter):
+def update_orders(
+    selected_store_name: str,
+    start_date: str,
+    end_date: str,
+    account_filter: str,
+) -> Any:
     day_val = "All"
 
     df_placed = fetch_daytime_data(

@@ -4,27 +4,31 @@ import pandas as pd
 import sys
 import os
 import logging
+from typing import Optional
 
 # Configure logging to screen and file
 log_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "log")
 os.makedirs(log_dir, exist_ok=True)
 logging.basicConfig(
     level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
     handlers=[
         logging.FileHandler(os.path.join(log_dir, "store_analysis.log")),
-        logging.StreamHandler(sys.stdout)
-    ]
+        logging.StreamHandler(sys.stdout),
+    ],
 )
 logger = logging.getLogger(__name__)
 
-def apply_sql_logic(conn):
+
+def apply_sql_logic(conn: sqlite3.Connection) -> None:
     """
     Discovers and executes all SQL scripts in the /sql directory to create database views.
     """
     sql_root = os.path.join(os.path.dirname(os.path.abspath(__file__)), "sql")
     if not os.path.exists(sql_root):
-        logger.warning(f"SQL directory not found at {sql_root}. Skipping SQL applications.")
+        logger.warning(
+            f"SQL directory not found at {sql_root}. Skipping SQL applications."
+        )
         return
 
     for root, _, files in os.walk(sql_root):
@@ -37,7 +41,14 @@ def apply_sql_logic(conn):
                 except sqlite3.Error as e:
                     logger.error(f"Error applying {filename}: {e}")
 
-def load_csv_to_sqlite(customers_path, orders_path, items_path, old_pos_orders_path=None, db_name="business_data.db"):
+
+def load_csv_to_sqlite(
+    customers_path: str,
+    orders_path: str,
+    items_path: str,
+    old_pos_orders_path: Optional[str] = None,
+    db_name: str = "business_data.db",
+) -> None:
     """
     Reads customer and order CSV files and stores them in a local SQLite database.
     """
@@ -61,19 +72,29 @@ def load_csv_to_sqlite(customers_path, orders_path, items_path, old_pos_orders_p
             logger.info(f"Processing customers: {customers_path}...")
             customers_df = pd.read_csv(customers_path)
             # Ensure date-related columns are treated as datetime objects
-            for col in ['Signed Up Date', 'Last Order']:
+            for col in ["Signed Up Date", "Last Order"]:
                 if col in customers_df.columns:
-                    customers_df[col] = pd.to_datetime(customers_df[col], errors='coerce')
+                    customers_df[col] = pd.to_datetime(
+                        customers_df[col], errors="coerce"
+                    )
             customers_df.to_sql("customers", conn, if_exists="replace", index=False)
 
             # Load Orders
             logger.info(f"Processing orders: {orders_path}...")
             orders_df = pd.read_csv(orders_path)
             # Ensure date-related columns are treated as datetime objects
-            order_date_cols = ['Placed', 'Ready By', 'Cleaned', 'Collected', 'Payment Date', 'Pickup Date', 'Paid By']
+            order_date_cols = [
+                "Placed",
+                "Ready By",
+                "Cleaned",
+                "Collected",
+                "Payment Date",
+                "Pickup Date",
+                "Paid By",
+            ]
             for col in order_date_cols:
                 if col in orders_df.columns:
-                    orders_df[col] = pd.to_datetime(orders_df[col], errors='coerce')
+                    orders_df[col] = pd.to_datetime(orders_df[col], errors="coerce")
             orders_df.to_sql("orders", conn, if_exists="replace", index=False)
 
             # Load Old POS Orders if provided
@@ -83,17 +104,23 @@ def load_csv_to_sqlite(customers_path, orders_path, items_path, old_pos_orders_p
                     old_orders_df = pd.read_csv(old_pos_orders_path)
                     for col in order_date_cols:
                         if col in old_orders_df.columns:
-                            old_orders_df[col] = pd.to_datetime(old_orders_df[col], errors='coerce')
-                    old_orders_df.to_sql("orders", conn, if_exists="append", index=False)
+                            old_orders_df[col] = pd.to_datetime(
+                                old_orders_df[col], errors="coerce"
+                            )
+                    old_orders_df.to_sql(
+                        "orders", conn, if_exists="append", index=False
+                    )
                 else:
-                    logger.warning(f"Old POS orders file not found at {old_pos_orders_path}. Skipping append.")
+                    logger.warning(
+                        f"Old POS orders file not found at {old_pos_orders_path}. Skipping append."
+                    )
 
             # Load Items
             logger.info(f"Processing items: {items_path}...")
             items_df = pd.read_csv(items_path)
             # Ensure date-related columns are treated as datetime objects
-            if 'Placed' in items_df.columns:
-                items_df['Placed'] = pd.to_datetime(items_df['Placed'], errors='coerce')
+            if "Placed" in items_df.columns:
+                items_df["Placed"] = pd.to_datetime(items_df["Placed"], errors="coerce")
             items_df.to_sql("items", conn, if_exists="replace", index=False)
 
             # Apply SQL views and analytical queries
@@ -102,30 +129,54 @@ def load_csv_to_sqlite(customers_path, orders_path, items_path, old_pos_orders_p
             # Materialize the summary view into a table and add indexes for performance
             logger.info("Materializing customer_summary table...")
             conn.execute("DROP TABLE IF EXISTS customer_summary")
-            conn.execute("CREATE TABLE customer_summary AS SELECT * FROM customer_order_summary")
-            
-            logger.info("Adding indexes to customer_summary...")
-            conn.execute('CREATE UNIQUE INDEX IF NOT EXISTS idx_summary_store_customer ON customer_summary ("Store ID", "Customer ID")')
-            conn.execute('CREATE INDEX IF NOT EXISTS idx_summary_store_id ON customer_summary ("Store ID")')
-            conn.execute('CREATE INDEX IF NOT EXISTS idx_summary_customer_id ON customer_summary ("Customer ID")')
+            conn.execute(
+                "CREATE TABLE customer_summary AS SELECT * FROM customer_order_summary"
+            )
 
-            logger.info("Data successfully loaded into 'customers', 'orders', 'items', and 'customer_summary' tables.")
+            logger.info("Adding indexes to customer_summary...")
+            conn.execute(
+                'CREATE UNIQUE INDEX IF NOT EXISTS idx_summary_store_customer ON customer_summary ("Store ID", "Customer ID")'
+            )
+            conn.execute(
+                'CREATE INDEX IF NOT EXISTS idx_summary_store_id ON customer_summary ("Store ID")'
+            )
+            conn.execute(
+                'CREATE INDEX IF NOT EXISTS idx_summary_customer_id ON customer_summary ("Customer ID")'
+            )
+
+            logger.info(
+                "Data successfully loaded into 'customers', 'orders', 'items', and 'customer_summary' tables."
+            )
 
     except Exception as e:
         logger.error(f"An error occurred during database operations: {e}")
         sys.exit(1)
 
-def main():
-    parser = argparse.ArgumentParser(description="Load Customer and Order CSV data into SQLite.")
-    parser.add_argument("--customers", required=True, help="Path to the customers .csv file")
+
+def main() -> None:
+    parser = argparse.ArgumentParser(
+        description="Load Customer and Order CSV data into SQLite."
+    )
+    parser.add_argument(
+        "--customers", required=True, help="Path to the customers .csv file"
+    )
     parser.add_argument("--orders", required=True, help="Path to the orders .csv file")
     parser.add_argument("--items", required=True, help="Path to the items .csv file")
-    parser.add_argument("--old_pos_orders", help="Optional path to old POS orders .csv file to append")
-    parser.add_argument("--database", default="business_data.db", help="Path to the SQLite database file")
+    parser.add_argument(
+        "--old_pos_orders", help="Optional path to old POS orders .csv file to append"
+    )
+    parser.add_argument(
+        "--database",
+        default="business_data.db",
+        help="Path to the SQLite database file",
+    )
 
     args = parser.parse_args()
 
-    load_csv_to_sqlite(args.customers, args.orders, args.items, args.old_pos_orders, args.database)
+    load_csv_to_sqlite(
+        args.customers, args.orders, args.items, args.old_pos_orders, args.database
+    )
+
 
 if __name__ == "__main__":
     main()

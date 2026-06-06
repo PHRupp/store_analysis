@@ -1,6 +1,7 @@
 import dash
 from dash import dcc, html, Input, Output, callback
 import plotly.express as px
+from typing import Any, List, Optional
 from database_utils import (
     fetch_item_pieces_by_week,
     fetch_unique_items,
@@ -54,8 +55,12 @@ layout = html.Div(
     ],
 )
 def update_items(
-    selected_store_name, start_date, end_date, account_filter, selected_items
-):
+    selected_store_name: str,
+    start_date: str,
+    end_date: str,
+    account_filter: str,
+    selected_items: Optional[List[str]],
+) -> Any:
     df_pieces = fetch_item_pieces_by_week(
         selected_store_name, start_date, end_date, account_filter, selected_items
     )

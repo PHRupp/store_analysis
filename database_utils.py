@@ -15,6 +15,7 @@ from sqlalchemy import (
     column,
     cast,
 )
+from typing import Any, List, Optional, Union
 
 # Database configuration
 DB_NAME = "business_data.db"
@@ -24,15 +25,15 @@ logger = logging.getLogger(__name__)
 
 
 def build_common_conditions(
-    conditions,
-    store_name=None,
-    store_col=None,
-    start_date=None,
-    date_col=None,
-    end_date=None,
-    account_filter="All",
-    account_col=None,
-):
+    conditions: List[Any],
+    store_name: Optional[str] = None,
+    store_col: Optional[Any] = None,
+    start_date: Optional[str] = None,
+    date_col: Optional[Any] = None,
+    end_date: Optional[str] = None,
+    account_filter: str = "All",
+    account_col: Optional[Any] = None,
+) -> List[Any]:
     """
     Appends store name, date range, and account filter conditions to a given list of conditions.
     """
@@ -47,7 +48,7 @@ def build_common_conditions(
     return conditions
 
 
-def execute_query(stmt, is_scalar=False):
+def execute_query(stmt: Any, is_scalar: bool = False) -> Union[pd.DataFrame, Any]:
     """
     Executes an SQLAlchemy statement, handles logging, and returns the result.
     """
@@ -71,7 +72,7 @@ def execute_query(stmt, is_scalar=False):
             return df
 
 
-def fetch_store_names():
+def fetch_store_names() -> List[str]:
     """
     Retrieves unique Store Names from the store_lookup view.
     """
@@ -88,8 +89,11 @@ def fetch_store_names():
 
 
 def fetch_customer_stats(
-    store_name=None, account_filter="All", start_date=None, end_date=None
-):
+    store_name: Optional[str] = None,
+    account_filter: str = "All",
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
+) -> pd.DataFrame:
     """
     Retrieves customer segmentation stats from the customer_summary table.
     """
@@ -138,7 +142,9 @@ def fetch_customer_stats(
         )
 
 
-def fetch_top_customers(store_name=None, account_filter="All", limit=50):
+def fetch_top_customers(
+    store_name: Optional[str] = None, account_filter: str = "All", limit: int = 50
+) -> pd.DataFrame:
     """
     Retrieves the top customers by total spending, including their median spend and detailed metadata.
     """
@@ -213,8 +219,12 @@ def fetch_top_customers(store_name=None, account_filter="All", limit=50):
 
 
 def fetch_overdue_customers(
-    store_name=None, account_filter="All", limit=20, start_date=None, end_date=None
-):
+    store_name: Optional[str] = None,
+    account_filter: str = "All",
+    limit: int = 20,
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
+) -> pd.DataFrame:
     """
     Retrieves customers who are past their expected visit date based on median order intervals.
     """
@@ -299,8 +309,11 @@ def fetch_overdue_customers(
 
 
 def fetch_new_customers_trend(
-    store_name=None, account_filter="All", start_date=None, end_date=None
-):
+    store_name: Optional[str] = None,
+    account_filter: str = "All",
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
+) -> pd.DataFrame:
     """
     Retrieves the count of new customers per month based on their first order date.
     """
@@ -369,12 +382,12 @@ def fetch_new_customers_trend(
 
 
 def fetch_last_order_trend(
-    store_name=None,
-    account_filter="All",
-    start_date=None,
-    end_date=None,
-    min_lapsed_days=None,
-):
+    store_name: Optional[str] = None,
+    account_filter: str = "All",
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
+    min_lapsed_days: Optional[int] = None,
+) -> pd.DataFrame:
     """
     Retrieves the count of customers based on their last order date per month.
     """
@@ -432,8 +445,11 @@ def fetch_last_order_trend(
 
 
 def fetch_monthly_revenue(
-    store_name=None, start_date=None, end_date=None, account_filter="All"
-):
+    store_name: Optional[str] = None,
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
+    account_filter: str = "All",
+) -> pd.DataFrame:
     """
     Connects to the SQLite database and retrieves total revenue aggregated by month.
     Optionally filters by a specific Store ID.
@@ -503,8 +519,11 @@ def fetch_monthly_revenue(
 
 
 def fetch_order_trends(
-    store_name=None, start_date=None, end_date=None, account_filter="All"
-):
+    store_name: Optional[str] = None,
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
+    account_filter: str = "All",
+) -> pd.DataFrame:
     """
     Retrieves median invoice amount and order count by month.
     """
@@ -586,8 +605,11 @@ def fetch_order_trends(
 
 
 def fetch_category_order_trends(
-    store_name=None, start_date=None, end_date=None, account_filter="All"
-):
+    store_name: Optional[str] = None,
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
+    account_filter: str = "All",
+) -> pd.DataFrame:
     """
     Retrieves the count of orders grouped by month and customer category.
     """
@@ -664,8 +686,11 @@ def fetch_category_order_trends(
 
 
 def fetch_order_totals(
-    store_name=None, start_date=None, end_date=None, account_filter="All"
-):
+    store_name: Optional[str] = None,
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
+    account_filter: str = "All",
+) -> pd.DataFrame:
     """
     Retrieves the raw 'Total' for every order matching the filters for histogram analysis.
     """
@@ -735,12 +760,12 @@ def fetch_order_totals(
 
 
 def fetch_daytime_data(
-    store_name=None,
-    start_date=None,
-    end_date=None,
-    account_filter="All",
-    day_of_week="All",
-):
+    store_name: Optional[str] = None,
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
+    account_filter: str = "All",
+    day_of_week: Union[str, int] = "All",
+) -> pd.DataFrame:
     """
     Retrieves the time component of 'Placed' and customer category for daytime analysis.
     """
@@ -820,12 +845,12 @@ def fetch_daytime_data(
 
 
 def fetch_collection_data(
-    store_name=None,
-    start_date=None,
-    end_date=None,
-    account_filter="All",
-    day_of_week="All",
-):
+    store_name: Optional[str] = None,
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
+    account_filter: str = "All",
+    day_of_week: Union[str, int] = "All",
+) -> pd.DataFrame:
     """
     Retrieves the time component of 'Collected' and customer category for daytime analysis.
     """
@@ -910,8 +935,11 @@ def fetch_collection_data(
 
 
 def fetch_customer_intervals(
-    store_name=None, account_filter="All", start_date=None, end_date=None
-):
+    store_name: Optional[str] = None,
+    account_filter: str = "All",
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
+) -> pd.DataFrame:
     """
     Retrieves the median interval for each customer for histogram analysis.
     """
@@ -961,8 +989,11 @@ def fetch_customer_intervals(
 
 
 def fetch_customer_ltv(
-    store_name=None, account_filter="All", start_date=None, end_date=None
-):
+    store_name: Optional[str] = None,
+    account_filter: str = "All",
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
+) -> pd.DataFrame:
     """
     Retrieves the total spend for each customer for histogram analysis.
     """
@@ -1005,7 +1036,7 @@ def fetch_customer_ltv(
         return pd.DataFrame(columns=["total_spend", "customer_category"])
 
 
-def fetch_unique_items():
+def fetch_unique_items() -> List[str]:
     """
     Retrieves unique Item names from the items table that have at least 5 total pieces ordered, sorted alphabetically.
     """
@@ -1039,12 +1070,12 @@ def fetch_unique_items():
 
 
 def fetch_item_pieces_by_week(
-    store_name=None,
-    start_date=None,
-    end_date=None,
-    account_filter="All",
-    selected_items=None,
-):
+    store_name: Optional[str] = None,
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
+    account_filter: str = "All",
+    selected_items: Optional[List[str]] = None,
+) -> pd.DataFrame:
     """
     Retrieves the total pieces over time, aggregated by week.
     """
@@ -1136,8 +1167,11 @@ def fetch_item_pieces_by_week(
 
 
 def fetch_total_order_count(
-    store_name=None, start_date=None, end_date=None, account_filter="All"
-):
+    store_name: Optional[str] = None,
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
+    account_filter: str = "All",
+) -> int:
     """
     Retrieves the total number of orders matching the filters.
     """
@@ -1194,8 +1228,12 @@ def fetch_total_order_count(
 
 
 def fetch_top_items(
-    store_name=None, start_date=None, end_date=None, account_filter="All", limit=20
-):
+    store_name: Optional[str] = None,
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
+    account_filter: str = "All",
+    limit: int = 20,
+) -> pd.DataFrame:
     """
     Retrieves the most frequent items within orders for market basket analysis.
     """
@@ -1267,8 +1305,12 @@ def fetch_top_items(
 
 
 def fetch_top_item_pairs(
-    store_name=None, start_date=None, end_date=None, account_filter="All", limit=20
-):
+    store_name: Optional[str] = None,
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
+    account_filter: str = "All",
+    limit: int = 20,
+) -> pd.DataFrame:
     """
     Retrieves the most frequent item pairs within orders for market basket analysis.
     """

@@ -2,6 +2,7 @@ import dash
 from dash import dcc, html, Input, Output, callback
 import plotly.express as px
 import plotly.graph_objects as go
+from typing import Any
 from database_utils import fetch_monthly_revenue
 
 dash.register_page(__name__, path="/", name="Enterprise Analysis", order=1)
@@ -30,7 +31,7 @@ layout = html.Div([html.Div(id="enterprise-content")])
         Input("account-type-dropdown", "value"),
     ],
 )
-def update_enterprise(start_date, end_date, account_filter):
+def update_enterprise(start_date: str, end_date: str, account_filter: str) -> Any:
     # Enterprise overview enforces aggregation over all stores
     selected_store_name = "All"
     df_revenue = fetch_monthly_revenue(
