@@ -444,19 +444,19 @@ def fetch_last_order_trend(
         )
 
 
-def fetch_monthly_revenue(
+def fetch_monthly_sales(
     store_name: Optional[str] = None,
     start_date: Optional[str] = None,
     end_date: Optional[str] = None,
     account_filter: str = "All",
 ) -> pd.DataFrame:
     """
-    Connects to the SQLite database and retrieves total revenue aggregated by month.
+    Connects to the SQLite database and retrieves total sales aggregated by month.
     Optionally filters by a specific Store ID.
     """
     if not os.path.exists(DB_PATH):
         logger.error(f"Database {DB_NAME} not found. Please run load_db.py first.")
-        return pd.DataFrame(columns=["month_year", "total_revenue"])
+        return pd.DataFrame(columns=["month_year", "total_sales"])
 
     orders_t = table(
         "orders",
@@ -481,7 +481,7 @@ def fetch_monthly_revenue(
     stmt = select(
         month_year,
         account_type,
-        func.sum(orders_t.c.Total).label("total_revenue"),
+        func.sum(orders_t.c.Total).label("total_sales"),
         func.sum(orders_t.c.Pieces).label("total_pieces"),
     ).select_from(
         orders_t.join(
@@ -515,7 +515,7 @@ def fetch_monthly_revenue(
         return execute_query(stmt)
     except Exception as e:
         logger.error(f"Error querying database: {e}")
-        return pd.DataFrame(columns=["month_year", "total_revenue"])
+        return pd.DataFrame(columns=["month_year", "total_sales"])
 
 
 def fetch_order_trends(
@@ -1396,3 +1396,103 @@ def fetch_top_item_pairs(
     except Exception as e:
         logger.error(f"Error fetching top item pairs: {e}")
         return pd.DataFrame(columns=["item_pair", "pair_count"])
+
+
+def fetch_customers_list(
+    store_name: Optional[str] = None,
+    account_filter: str = "All",
+) -> pd.DataFrame:
+    """
+    Retrieves the list of unique customers matching the store and account filter.
+    Returns: DataFrame with columns ['Customer ID', 'Store ID', 'Name', 'Store Name', 'display_name']
+    """
+    if not os.path.exists(DB_PATH):
+        return pd.DataFrame(columns=["Customer ID", "Store ID", "Name", "Store Name", "display_name"])
+
+    customer_summary = table(
+        "customer_summary",
+        column("Customer ID"),
+        column("Store ID"),
+        column("Store Name"),
+        column("Name"),
+        column("account_type"),
+    )
+
+    stmt = select(
+        customer_summary.c["Customer ID"],
+        customer_summary.c["Store ID"],
+        customer_summary.c["Store Name"],
+        customer_summary.c.Name,
+    )
+
+    conditions = build_common_conditions(
+        [],
+        store_name=store_name,
+        store_col=customer_summary.c["Store Name"],
+        account_filter=account_filter,
+        account_col=customer_summary.c.account_type,
+    )
+
+    if conditions:
+        stmt = stmt.where(and_(*conditions))
+
+    stmt = stmt.order_by(customer_summary.c.Name.asc())
+
+    try:
+        df = execute_query(stmt)
+        if not df.empty:
+            df["display_name"] = df.apply(
+                lambda row: f"{row['Name']} ({row['Store Name']})", axis=1
+            )
+        return df
+    except Exception as e:
+        logger.error(f"Error fetching customers list: {e}")
+        return pd.DataFrame(columns=["Customer ID", "Store ID", "Name", "Store Name", "display_name"])
+
+
+def fetch_customer_monthly_sales(
+    customer_id: int,
+    store_id: int,
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
+) -> pd.DataFrame:
+    """
+    Retrieves a specific customer's monthly sales over time.
+    """
+    if not os.path.exists(DB_PATH):
+        return pd.DataFrame(columns=["month_year", "total_sales"])
+
+    orders_t = table(
+        "orders",
+        column("Placed"),
+        column("Total"),
+        column("Customer ID"),
+        column("Store ID"),
+    )
+
+    month_year = func.strftime("%Y-%m", orders_t.c.Placed).label("month_year")
+
+    conditions = [
+        orders_t.c.Placed.isnot(None),
+        orders_t.c["Customer ID"] == customer_id,
+        orders_t.c["Store ID"] == store_id,
+    ]
+
+    if start_date:
+        conditions.append(orders_t.c.Placed >= start_date)
+    if end_date:
+        conditions.append(orders_t.c.Placed <= end_date)
+
+    stmt = select(
+        month_year,
+        func.sum(orders_t.c.Total).label("total_sales"),
+    ).where(
+        and_(*conditions)
+    ).group_by(month_year).order_by(text("month_year ASC"))
+
+    try:
+        return execute_query(stmt)
+    except Exception as e:
+        logger.error(f"Error querying customer monthly sales: {e}")
+        return pd.DataFrame(columns=["month_year", "total_sales"])
+

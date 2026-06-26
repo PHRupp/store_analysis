@@ -3,7 +3,7 @@ from dash import dcc, html, Input, Output, callback
 import plotly.express as px
 import plotly.graph_objects as go
 from typing import Any
-from database_utils import fetch_monthly_revenue
+from database_utils import fetch_monthly_sales
 
 dash.register_page(__name__, path="/", name="Enterprise Analysis", order=1)
 
@@ -34,24 +34,24 @@ layout = html.Div([html.Div(id="enterprise-content")])
 def update_enterprise(start_date: str, end_date: str, account_filter: str) -> Any:
     # Enterprise overview enforces aggregation over all stores
     selected_store_name = "All"
-    df_revenue = fetch_monthly_revenue(
+    df_sales = fetch_monthly_sales(
         selected_store_name, start_date, end_date, account_filter
     )
 
-    title = "Monthly Revenue Overview - Enterprise"
+    title = "Monthly Sales Overview - Enterprise"
 
-    if not df_revenue.empty:
-        df_line = df_revenue.groupby("month_year")["total_pieces"].sum().reset_index()
+    if not df_sales.empty:
+        df_line = df_sales.groupby("month_year")["total_pieces"].sum().reset_index()
 
         fig = px.bar(
-            df_revenue,
+            df_sales,
             x="month_year",
-            y="total_revenue",
+            y="total_sales",
             color="account_type",
             title=title,
             labels={
                 "month_year": "Month (YYYY-MM)",
-                "total_revenue": "Total Revenue ($)",
+                "total_sales": "Total Sales ($)",
                 "account_type": "Account Type",
             },
             template="plotly_dark",
@@ -76,6 +76,7 @@ def update_enterprise(start_date: str, end_date: str, account_filter: str) -> An
                 side="right",
                 showgrid=False,
                 color="#FFD700",
+                rangemode="tozero",
             ),
             legend=dict(
                 orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1
@@ -89,4 +90,4 @@ def update_enterprise(start_date: str, end_date: str, account_filter: str) -> An
             plot_bgcolor="#111111", paper_bgcolor="#111111", font_color="#7FDBFF"
         )
 
-    return html.Div([dcc.Graph(id="enterprise-revenue-bar-chart", figure=fig)])
+    return html.Div([dcc.Graph(id="enterprise-sales-bar-chart", figure=fig)])

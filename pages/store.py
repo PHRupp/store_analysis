@@ -5,7 +5,7 @@ import plotly.express as px
 import plotly.graph_objects as go
 from typing import Any, Optional
 from database_utils import (
-    fetch_monthly_revenue,
+    fetch_monthly_sales,
     fetch_order_trends,
     fetch_category_order_trends,
     fetch_new_customers_trend,
@@ -29,11 +29,11 @@ CATEGORY_COLORS = {
 
 layout = html.Div(
     [
-        dcc.Graph(id="store-revenue-bar-chart"),
+        dcc.Graph(id="store-sales-bar-chart"),
         html.Div(
             [
                 html.Div(
-                    dcc.Graph(id="store-revenue-per-piece-chart"),
+                    dcc.Graph(id="store-sales-per-piece-chart"),
                     style={"width": "50%"},
                 ),
                 html.Div(
@@ -104,8 +104,8 @@ layout = html.Div(
 
 @callback(
     [
-        Output("store-revenue-bar-chart", "figure"),
-        Output("store-revenue-per-piece-chart", "figure"),
+        Output("store-sales-bar-chart", "figure"),
+        Output("store-sales-per-piece-chart", "figure"),
         Output("store-pieces-per-order-chart", "figure"),
         Output("store-order-trends-chart", "figure"),
         Output("store-category-trends-chart", "figure"),
@@ -127,7 +127,7 @@ def update_store(
     account_filter: str,
     min_lapsed_days: Optional[int],
 ) -> Any:
-    df_revenue = fetch_monthly_revenue(
+    df_sales = fetch_monthly_sales(
         selected_store_name, start_date, end_date, account_filter
     )
     df_trends = fetch_order_trends(
@@ -143,20 +143,20 @@ def update_store(
         selected_store_name, account_filter, start_date, end_date, min_lapsed_days
     )
 
-    title = f"Monthly Revenue Overview - Store: {selected_store_name}"
+    title = f"Monthly Sales Overview - Store: {selected_store_name}"
 
-    if not df_revenue.empty:
-        df_line = df_revenue.groupby("month_year")["total_pieces"].sum().reset_index()
+    if not df_sales.empty:
+        df_line = df_sales.groupby("month_year")["total_pieces"].sum().reset_index()
 
         fig = px.bar(
-            df_revenue,
+            df_sales,
             x="month_year",
-            y="total_revenue",
+            y="total_sales",
             color="account_type",
             title=title,
             labels={
                 "month_year": "Month (YYYY-MM)",
-                "total_revenue": "Total Revenue ($)",
+                "total_sales": "Total Sales ($)",
                 "account_type": "Account Type",
             },
             template="plotly_dark",
@@ -181,6 +181,7 @@ def update_store(
                 side="right",
                 showgrid=False,
                 color="#FFD700",
+                rangemode="tozero",
             ),
             legend=dict(
                 orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1
@@ -188,12 +189,12 @@ def update_store(
         )
 
         df_ratio = (
-            df_revenue.groupby("month_year")[["total_revenue", "total_pieces"]]
+            df_sales.groupby("month_year")[["total_sales", "total_pieces"]]
             .sum()
             .reset_index()
         )
-        df_ratio["revenue_per_piece"] = (
-            df_ratio["total_revenue"] / df_ratio["total_pieces"]
+        df_ratio["sales_per_piece"] = (
+            df_ratio["total_sales"] / df_ratio["total_pieces"]
         )
 
         fig_ratio = go.Figure()
@@ -208,22 +209,22 @@ def update_store(
         fig_ratio.add_trace(
             go.Scatter(
                 x=df_ratio["month_year"],
-                y=df_ratio["revenue_per_piece"],
-                name="Revenue per Piece",
+                y=df_ratio["sales_per_piece"],
+                name="Sales per Piece",
                 mode="lines+markers",
                 line=dict(color="#00CC96", width=3),
                 yaxis="y2",
             )
         )
         fig_ratio.update_layout(
-            title="Revenue per Piece Over Time",
+            title="Sales per Piece Over Time",
             template="plotly_dark",
             plot_bgcolor="#111111",
             paper_bgcolor="#111111",
             font_color="#7FDBFF",
             yaxis=dict(title="Total Pieces"),
             yaxis2=dict(
-                title="Revenue per Piece ($)",
+                title="Sales per Piece ($)",
                 overlaying="y",
                 side="right",
                 showgrid=False,

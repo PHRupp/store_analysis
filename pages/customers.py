@@ -10,6 +10,8 @@ from database_utils import (
     fetch_overdue_customers,
     fetch_customer_intervals,
     fetch_customer_ltv,
+    fetch_customers_list,
+    fetch_customer_monthly_sales,
 )
 
 dash.register_page(__name__, path="/customers", name="Customer Analysis", order=3)
@@ -268,6 +270,17 @@ def update_customers(
             plot_bgcolor="#111111", paper_bgcolor="#111111", font_color="#7FDBFF"
         )
 
+    df_customers = fetch_customers_list(selected_store, account_filter)
+    if not df_customers.empty:
+        customer_options = [
+            {"label": row["display_name"], "value": f"{row['Store ID']}_{row['Customer ID']}"}
+            for _, row in df_customers.iterrows()
+        ]
+        default_customer_val = customer_options[0]["value"]
+    else:
+        customer_options = []
+        default_customer_val = None
+
     return html.Div(
         [
             html.Div(
@@ -309,5 +322,106 @@ def update_customers(
                 ],
                 style={"display": "flex"},
             ),
+            html.Div(
+                [
+                    html.Div(
+                        [
+                            html.Label(
+                                "Select Customer:",
+                                style={
+                                    "color": "#7FDBFF",
+                                    "marginBottom": "10px",
+                                    "display": "block",
+                                    "fontWeight": "bold",
+                                },
+                            ),
+                            dcc.Dropdown(
+                                id="customer-sales-dropdown",
+                                options=customer_options,
+                                value=default_customer_val,
+                                style={
+                                    "width": "100%",
+                                    "color": "#111111",
+                                    "marginTop": "10px",
+                                },
+                            ),
+                        ],
+                        style={"width": "25%", "padding": "20px", "boxSizing": "border-box"},
+                    ),
+                    html.Div(
+                        [dcc.Graph(id="customer-sales-graph")],
+                        style={"width": "75%"},
+                    ),
+                ],
+                style={"display": "flex", "alignItems": "center", "marginTop": "20px"},
+            ),
         ]
     )
+
+
+@callback(
+    Output("customer-sales-graph", "figure"),
+    [
+        Input("customer-sales-dropdown", "value"),
+        Input("date-range-picker", "start_date"),
+        Input("date-range-picker", "end_date"),
+    ],
+)
+def update_customer_sales_graph(
+    selected_customer_val: Optional[str],
+    start_date: str,
+    end_date: str,
+) -> Any:
+    if not selected_customer_val:
+        fig = px.scatter(title="No customer selected.", template="plotly_dark")
+        fig.update_layout(
+            plot_bgcolor="#111111", paper_bgcolor="#111111", font_color="#7FDBFF"
+        )
+        return fig
+
+    try:
+        store_id_str, customer_id_str = selected_customer_val.split("_", 1)
+        store_id = int(store_id_str)
+        customer_id = int(customer_id_str)
+    except ValueError:
+        fig = px.scatter(title="Invalid customer selected.", template="plotly_dark")
+        fig.update_layout(
+            plot_bgcolor="#111111", paper_bgcolor="#111111", font_color="#7FDBFF"
+        )
+        return fig
+
+    df_sales = fetch_customer_monthly_sales(
+        customer_id=customer_id,
+        store_id=store_id,
+        start_date=start_date,
+        end_date=end_date,
+    )
+
+    if df_sales.empty:
+        fig = px.scatter(
+            title="No sales data found for the selected customer.",
+            template="plotly_dark",
+        )
+        fig.update_layout(
+            plot_bgcolor="#111111", paper_bgcolor="#111111", font_color="#7FDBFF"
+        )
+        return fig
+
+    fig = px.bar(
+        df_sales,
+        x="month_year",
+        y="total_sales",
+        title="Monthly Sales Over Time",
+        labels={"month_year": "Month-Year", "total_sales": "Total Sales ($)"},
+        template="plotly_dark",
+    )
+    fig.update_layout(
+        plot_bgcolor="#111111",
+        paper_bgcolor="#111111",
+        font_color="#7FDBFF",
+    )
+    fig.update_traces(
+        marker_color="#00CC96",
+        hovertemplate="Month: %{x}<br>Sales: $%{y:,.2f}<extra></extra>",
+    )
+    return fig
