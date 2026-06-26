@@ -405,6 +405,10 @@ def update_customer_sales_graph(
         fig.update_layout(
             plot_bgcolor="#111111", paper_bgcolor="#111111", font_color="#7FDBFF"
         )
+        start_month = start_date[:7] if start_date else None
+        end_month = end_date[:7] if end_date else None
+        if start_month and end_month:
+            fig.update_xaxes(type="date", range=[start_month, end_month])
         return fig
 
     fig = px.bar(
@@ -420,6 +424,10 @@ def update_customer_sales_graph(
         paper_bgcolor="#111111",
         font_color="#7FDBFF",
     )
+    start_month = start_date[:7] if start_date else None
+    end_month = end_date[:7] if end_date else None
+    if start_month and end_month:
+        fig.update_xaxes(type="date", range=[start_month, end_month])
     fig.update_traces(
         marker_color="#00CC96",
         hovertemplate="Month: %{x}<br>Sales: $%{y:,.2f}<extra></extra>",
